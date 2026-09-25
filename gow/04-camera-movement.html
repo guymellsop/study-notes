@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Camera and Movement · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Third-person camera and movement</h1>
+<p class="meta">Course day 8 (camera setup) · <code>AWarriorHeroCharacter</code> constructor, <code>Input_Move</code>, <code>Input_Look</code> · 8 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Three rotations are in play: the <b>controller's</b> (where you're looking), the <b>camera boom's</b> (follows the
+controller) and the <b>character's</b> (turns toward where you're walking). Your settings keep the character out of
+the controller's rotation, so the camera orbits freely while he turns to face his movement direction.</p>
+</div>
+
+<h2>The components</h2>
+<pre><code>CameraBoom = CreateDefaultSubobject&lt;USpringArmComponent&gt;(TEXT("CameraBoom"));
+CameraBoom-&gt;SetupAttachment(GetRootComponent());
+CameraBoom-&gt;TargetArmLength = 200.0f;
+CameraBoom-&gt;SocketOffset = FVector(0.0f, 55.0f, 65.0f);
+CameraBoom-&gt;bUsePawnControlRotation = true;
+
+FollowCamera = CreateDefaultSubobject&lt;UCameraComponent&gt;(TEXT("FollowCamera"));
+FollowCamera-&gt;SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
+FollowCamera-&gt;bUsePawnControlRotation = false;</code></pre>
+<ul>
+<li><b><code>CreateDefaultSubobject</code></b> only works in the <b>constructor</b>. It creates the component as part of the
+class's default object, so every Blueprint child gets it and can tweak it.</li>
+<li><b><code>SetupAttachment</code></b> (constructor) vs <b><code>AttachToComponent</code></b> (at runtime). Use the right one for where you are.</li>
+<li><b>Spring arm</b>: a stick from the character to the camera. When something is in the way, it pulls the camera in
+(collision test), so the camera doesn't clip through walls.</li>
+<li><b><code>SocketOffset (0, 55, 65)</code></b>: shifts the end of the stick 55 right and 65 up. That's the
+<b>over-the-shoulder</b> look from the recent God of War games, instead of a camera centred behind the head.</li>
+<li>The boom uses the control rotation; the camera doesn't, so it just rides on the end of the boom.</li>
+</ul>
+
+<h2>Who turns the character?</h2>
+<pre><code>bUseControllerRotationYaw = false;                       // don't snap to the camera
+GetCharacterMovement()-&gt;bOrientRotationToMovement = true; // turn toward movement
+GetCharacterMovement()-&gt;RotationRate = FRotator(0.f, 500.f, 0.f); // 500°/s yaw</code></pre>
+<div class="table-wrap"><table>
+<tr><th>Setting</th><th>Feels like</th></tr>
+<tr><td>Yaw from controller <b>off</b>, orient to movement <b>on</b></td><td>Free camera; he runs toward what you press. <b>Exploring.</b> (What you have.)</td></tr>
+<tr><td>Yaw from controller <b>on</b></td><td>He always faces where the camera looks and strafes. <b>Aiming / locked on.</b></td></tr>
+</table></div>
+<p>Kratos switches between these: free while exploring, facing the target when you lock on or aim the axe. Expect a lesson
+that flips these flags (or uses <code>bUseControllerDesiredRotation</code>) at runtime.</p>
+
+<h2>Input_Move, line by line</h2>
+<pre><code>const FVector2D MovementVector = InputActionValue.Get&lt;FVector2D&gt;();
+const FRotator MovementRotation(0.f, Controller-&gt;GetControlRotation().Yaw, 0.f);
+
+if (MovementVector.Y != 0.f) {
+    const FVector ForwardDirection = MovementRotation.RotateVector(FVector::ForwardVector);
+    AddMovementInput(ForwardDirection, MovementVector.Y);
+}
+if (MovementVector.X != 0.f) {
+    const FVector RightDirection = MovementRotation.RotateVector(FVector::RightVector);
+    AddMovementInput(RightDirection, MovementVector.X);
+}</code></pre>
+<ol>
+<li><code>Get&lt;FVector2D&gt;()</code>: the stick/WASD value. Y is forward/back, X is right/left. That only works because the
+action's value type is Vector2D.</li>
+<li><b>Keep only the yaw.</b> If you used the full control rotation, looking down would push "forward" into the
+floor and he'd move slower. Zeroing pitch and roll gives a flat direction.</li>
+<li><code>RotateVector(ForwardVector)</code>: world forward (X) turned to match the camera's heading. That's
+"forward <i>relative to the camera</i>", the standard third-person feel.</li>
+<li><code>AddMovementInput(dir, scale)</code>: this doesn't move anything itself. It adds to a request the
+<b>Character Movement Component</b> uses on its tick, together with speed, acceleration, friction and
+<code>BrakingDecelerationWalking</code>.</li>
+</ol>
+<p><b>Input_Look</b> is simpler: <code>AddControllerYawInput</code> / <code>AddControllerPitchInput</code> rotate the
+<i>controller</i>. The boom follows because of <code>bUsePawnControlRotation</code>. If looking up and down feels inverted, the
+fix is a Negate modifier on the mapping, not code.</p>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Why build <code>MovementRotation</code> from only the yaw?</summary>
+<div class="a"><p>With pitch included, looking down tilts "forward" into the ground, so movement slows down or goes wrong. Yaw-only gives a flat heading.</p></div></details>
+<details class="q"><summary>What does <code>bOrientRotationToMovement = true</code> plus <code>bUseControllerRotationYaw = false</code> feel like in game?</summary>
+<div class="a"><p>The camera orbits freely, and the character turns (at <code>RotationRate</code>) to face the direction he's moving.</p></div></details>
+<details class="q"><summary>What does <code>SocketOffset = (0, 55, 65)</code> achieve?</summary>
+<div class="a"><p>It moves the camera right and up from the end of the arm: an over-the-shoulder framing.</p></div></details>
+<details class="q"><summary><code>SetupAttachment</code> vs <code>AttachToComponent</code>?</summary>
+<div class="a"><p><code>SetupAttachment</code> is for the constructor, before the component is registered. <code>AttachToComponent</code> is for runtime (e.g. attaching a spawned weapon to a hand socket).</p></div></details>
+<details class="q"><summary>Does <code>AddMovementInput</code> move the character straight away?</summary>
+<div class="a"><p>No. It accumulates an input vector that the Character Movement Component consumes on its tick, applying acceleration, max speed and friction.</p></div></details>
+<details class="q"><summary>A wall comes between the character and the camera. What stops the camera from clipping through it?</summary>
+<div class="a"><p>The spring arm's collision test (<code>bDoCollisionTest</code>, on by default). It sweeps from the character to the camera and shortens the arm to the hit point.</p></div></details>
+<details class="q"><summary>Which component actually swings around when you move the mouse: the boom, the camera, or the character?</summary>
+<div class="a"><p>Mouse input rotates the <b>controller</b>. The <b>boom</b> follows it (<code>bUsePawnControlRotation = true</code>), and the camera rides on the end of the boom. The character doesn't turn, because controller yaw is off.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

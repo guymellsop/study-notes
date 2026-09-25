@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anim Instances · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Anim instances in C++</h1>
+<p class="meta">Course day 10 (AnimInstance setup) · <code>WarriorBaseAnimInstance</code> → <code>WarriorCharacterAnimInstance</code> → <code>WarriorHeroAnimInstance</code>, plus <code>WarriorHeroLinkedAnimLayer</code> · 10 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>The Animation Blueprint's <b>event graph moves into C++</b>. C++ works out a few numbers each frame (speed, "is
+accelerating", "been idle long enough to relax"), and the <b>anim graph</b> in the Blueprint just reads them to drive the
+blend space and state machine. Doing that gathering in the <b>thread-safe update</b> lets it run off the game thread.</p>
+</div>
+
+<h2>The class ladder</h2>
+<div class="table-wrap"><table>
+<tr><th>Class</th><th>Adds</th><th>Why a separate level</th></tr>
+<tr><td><code>UWarriorBaseAnimInstance</code></td><td>Nothing yet</td><td>Common parent for <i>every</i> anim class, including linked layers.</td></tr>
+<tr><td><code>UWarriorCharacterAnimInstance</code></td><td>Owning character + movement component, <code>GroundSpeed</code>, <code>bHasAcceleration</code></td><td>Heroes <b>and enemies</b> both need locomotion data.</td></tr>
+<tr><td><code>UWarriorHeroAnimInstance</code></td><td>Idle timer → <code>bShouldEnterRelaxState</code></td><td>Only the hero has a "relax" idle.</td></tr>
+<tr><td><code>UWarriorHeroLinkedAnimLayer</code></td><td>Nothing yet</td><td>Parent for <b>linked anim layers</b>, e.g. separate unarmed and axe locomotion swapped in at runtime.</td></tr>
+</table></div>
+<p><b>Linked anim layers:</b> the main anim BP calls a "layer" (e.g. <i>Locomotion</i>) defined by an Animation Layer
+Interface. Different anim classes implement it, one for unarmed and one for the axe, and you swap them with
+<code>LinkAnimClassLayers</code> when the weapon changes. The main graph never changes. (This is Lyra's approach too.)</p>
+
+<h2>The three functions</h2>
+<div class="table-wrap"><table>
+<tr><th>Function</th><th>When</th><th>Thread</th><th>Your use</th></tr>
+<tr><td><code>NativeInitializeAnimation</code></td><td>Once, when the instance is created</td><td>Game</td><td>Cache <code>OwningCharacter</code> and its movement component.</td></tr>
+<tr><td><code>NativeUpdateAnimation</code></td><td>Every frame, first</td><td>Game</td><td>Hero: idle timer.</td></tr>
+<tr><td><code>NativeThreadSafeUpdateAnimation</code></td><td>Every frame, after the above</td><td><b>Worker thread</b> (when multithreaded anim update is on)</td><td>Ground speed, acceleration.</td></tr>
+</table></div>
+
+<pre><code>void UWarriorCharacterAnimInstance::NativeInitializeAnimation() {
+    OwningCharacter = Cast&lt;AWarriorBaseCharacter&gt;(TryGetPawnOwner());
+    if (OwningCharacter) OwningMovementComponent = OwningCharacter-&gt;GetCharacterMovement();
+}
+
+void UWarriorCharacterAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds) {
+    if (!OwningCharacter || !OwningMovementComponent) return;
+    GroundSpeed = OwningCharacter-&gt;GetVelocity().Size();
+    bHasAcceleration = OwningMovementComponent-&gt;GetCurrentAcceleration().SizeSquared2D() &gt; 0.f;
+}</code></pre>
+<ul>
+<li><b>Why null-check every frame?</b> Anim instances also run in the <b>editor preview</b> (the anim BP editor, the
+Persona viewport), where there's no pawn. <code>TryGetPawnOwner()</code> returns null there. Without the check, just opening
+the asset would crash the editor.</li>
+<li><b><code>SizeSquared2D() &gt; 0</code></b>: squared length skips a square root. You only need "is it
+non-zero", and squared is zero exactly when length is. 2D ignores falling.</li>
+<li><b>Acceleration vs velocity:</b> acceleration is "player is pushing the stick". Velocity is "still sliding". Using
+acceleration to leave idle means the character responds to input straight away, not after he's started moving.</li>
+<li><b><code>UPROPERTY()</code> on the cached pointers</b> means the GC knows about them. See
+<a href="../unreal/garbage-collection.html">Garbage collection</a>.</li>
+</ul>
+
+<h2>The relax state</h2>
+<pre><code>if (bHasAcceleration) { IdleElapsedTime = 0.f; bShouldEnterRelaxState = false; }
+else { IdleElapsedTime += DeltaSeconds; bShouldEnterRelaxState = (IdleElapsedTime &gt;= RelaxThreshold); }</code></pre>
+<p>A timer built from <code>DeltaSeconds</code>: accumulate while idle, reset on input. <code>RelaxThreshold</code> is
+<code>EditDefaultsOnly</code>, so the anim BP can tune it (5 s by default). <code>IdleElapsedTime</code> has <b>no</b>
+UPROPERTY: it's a plain float, so the GC doesn't care, and nobody needs to see it in the editor.</p>
+
+<div class="box warn"><span class="label">Three things worth noticing (good interview material)</span>
+<p><b>1. Frame order.</b> The hero reads <code>bHasAcceleration</code> in <code>NativeUpdateAnimation</code>, but the
+parent writes it in <code>NativeThreadSafeUpdateAnimation</code>, which runs <i>later</i> in the frame. So the hero
+always sees <b>last frame's</b> value. For a 5-second relax timer nobody will ever notice. It's the same kind of bug as
+the Niagara drift question (<a href="../unreal/tick-and-frame.html">Tick and frame order</a>), so spotting it
+shows you understand frame order.</p>
+<p><b>2. <code>GetVelocity().Size()</code> includes falling speed.</b> Mid-jump, "ground speed" climbs as you
+fall. <code>Size2D()</code> is the usual choice for a locomotion blend space.</p>
+<p><b>3. Reading the character from a worker thread</b> is what the course does and works fine here. Epic's stricter
+advice is to copy what you need on the game thread (or use <i>Property Access</i> in the anim graph) and have
+the thread-safe function only read your own data. Know that this is the "proper" answer if asked.</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Why does <code>NativeThreadSafeUpdateAnimation</code> exist? What's the benefit?</summary>
+<div class="a"><p>It can run on a <b>worker thread</b> in parallel, taking animation work off the game thread. With many animated characters, that's real frame time saved.</p></div></details>
+<details class="q"><summary>Why can <code>TryGetPawnOwner()</code> return null, and when?</summary>
+<div class="a"><p>In the editor's animation preview (no pawn exists), or before the instance is attached to a pawn. That's why every update null-checks first.</p></div></details>
+<details class="q"><summary>Why use acceleration, not velocity, to decide "the player is moving"?</summary>
+<div class="a"><p>Acceleration reflects input straight away. Velocity lags (he's still sliding after release, and still near zero on the first frame of input).</p></div></details>
+<details class="q"><summary>Spot the frame-order issue in the hero's relax logic.</summary>
+<div class="a"><p><code>NativeUpdateAnimation</code> (hero) reads <code>bHasAcceleration</code> before <code>NativeThreadSafeUpdateAnimation</code> (parent) writes it this frame. It's always one frame stale. Harmless here, but the same kind of bug as a follower lagging one frame behind.</p></div></details>
+<details class="q"><summary>What's the point of <code>UWarriorCharacterAnimInstance</code> being separate from the hero one?</summary>
+<div class="a"><p>Enemies need the same locomotion data (speed, acceleration) but not the hero-only relax state. Shared code sits in the shared parent.</p></div></details>
+<details class="q"><summary>What are linked anim layers for in this project?</summary>
+<div class="a"><p>Swapping whole chunks of animation (e.g. unarmed vs axe locomotion) at runtime via <code>LinkAnimClassLayers</code>, without changing the main anim graph.</p></div></details>
+<details class="q"><summary>Why is <code>SizeSquared2D() &gt; 0</code> used instead of <code>Size2D() &gt; 0</code>?</summary>
+<div class="a"><p>It skips a square root. For a zero check the answer is the same.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

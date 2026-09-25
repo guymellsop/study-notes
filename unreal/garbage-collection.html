@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Garbage Collection · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Unreal internals</a></nav>
+<main>
+<h1>Garbage collection and UPROPERTY</h1>
+<p class="meta">Mock Q3 (Partial) + the "bugs that pass testing" list from Q2 · 8 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Unreal's GC keeps an object alive only if it can <b>reach</b> it through references it knows about:
+<code>UPROPERTY</code> members or <code>AddReferencedObjects</code>. A raw pointer without <code>UPROPERTY</code> is
+invisible. The object gets collected on the next GC pass, the pointer dangles, and you crash minutes later somewhere
+unrelated. <b><code>UPROPERTY</code> is the fix, not <code>TObjectPtr</code>.</b></p>
+</div>
+
+<h2>The question</h2>
+<p>A member <code>UBodySetup* ClusterBodySetup;</code> with no <code>UPROPERTY</code>, created with
+<code>NewObject&lt;UBodySetup&gt;(this)</code>, works in testing but crashes in physics a few minutes into a session. What's
+happening? Give two fixes and when to choose each. Is <code>TObjectPtr</code> alone a fix?</p>
+
+<h2>What's happening</h2>
+<ul>
+<li>GC is <b>mark-and-sweep by reachability</b>. It starts from the root set (rooted objects, loaded levels and their actors),
+follows every reference it knows about, and destroys everything it didn't reach.</li>
+<li>It only knows <b>reflected</b> references: <code>UPROPERTY</code> members, or references reported via
+<code>AddReferencedObjects</code>.</li>
+<li><b>Trap: being the Outer doesn't keep it alive.</b> <code>NewObject&lt;T&gt;(this)</code> sets naming and package
+path, but the object is still collectable if nothing references it.</li>
+<li><b>Why "a few minutes":</b> GC runs periodically (interval, memory pressure, level transitions), not constantly.</li>
+<li><b>Why a crash, not a clean failure:</b> a raw pointer isn't cleared when its object dies. It dangles into freed or reused
+memory, and the crash happens at next use, far from the cause.</li>
+</ul>
+
+<h2>Fixes, and when to use each</h2>
+<div class="table-wrap"><table>
+<tr><th>Fix</th><th>Use when</th></tr>
+<tr><td><code>UPROPERTY() TObjectPtr&lt;T&gt; X;</code></td><td><b>Default.</b> The owner is a UObject. You also get serialization, editor visibility and reference replacement.</td></tr>
+<tr><td><code>FGCObject</code> + <code>AddReferencedObjects</code></td><td>The owner is <b>not</b> a UObject (Slate widget, toolkit, plain C++ class) but must keep a UObject alive.</td></tr>
+<tr><td><code>TStrongObjectPtr&lt;T&gt;</code></td><td>Same as above, for a single pointer. It's a convenience wrapper.</td></tr>
+<tr><td><code>AddToRoot()</code> / <code>RemoveFromRoot()</code></td><td>Rarely. It's global lifetime until un-rooted, so forgetting leaks it. For process-lifetime singletons.</td></tr>
+<tr><td><code>TWeakObjectPtr&lt;T&gt;</code></td><td><b>Not a keep-alive.</b> It lets you <i>safely detect</i> the object is gone (<code>Get()</code> → null). For things you don't own.</td></tr>
+</table></div>
+
+<h2>TObjectPtr vs raw pointer</h2>
+<ul>
+<li><code>TObjectPtr</code> is UE5's replacement for raw <code>UObject*</code> in <b>UPROPERTY members</b>. In the editor it adds
+access tracking and lazy loading. In shipping it's the same size and cost as a raw pointer.</li>
+<li>Convention: <code>TObjectPtr</code> for header members; raw <code>T*</code> is fine for parameters and locals.</li>
+<li><b>Does <code>TObjectPtr</code> alone fix it? No.</b> <code>UPROPERTY</code> is what makes the GC see it.</li>
+</ul>
+
+<div class="box yours"><span class="label">In WadOfGore</span>
+<p><code>UPROPERTY() AWarriorBaseCharacter* OwningCharacter;</code> in the anim instance. The <code>UPROPERTY()</code>
+with no specifiers exists purely so the GC tracks it. You know why it's there now.</p>
+</div>
+
+<h2>Bugs that pass a quick test (know three by heart)</h2>
+<ul>
+<li><b>Raw UObject pointer without UPROPERTY</b>: fine until the first GC pass.</li>
+<li><b>Undo/redo</b>: a property changed without <code>Modify()</code> / <code>FScopedTransaction</code> works, but breaks Ctrl+Z.</li>
+<li><b>Save → reload</b>: transient or non-UPROPERTY state looks right in the session and is lost on reload.</li>
+<li><b>Live Coding vs full restart</b>: CDO and reinstancing differences hide bugs.</li>
+<li><b>Editor vs packaged</b>: code touching <code>WITH_EDITORONLY_DATA</code> works in-editor and fails in a build.</li>
+</ul>
+
+<div class="box say"><span class="label">40-second answer</span>
+<p>"The GC only follows reflected references, so a raw pointer without UPROPERTY doesn't keep it alive, and being its
+Outer doesn't either. The first GC pass collects it, the pointer dangles, physics crashes on next use. Fix: UPROPERTY on
+a TObjectPtr if the owner is a UObject; FGCObject or TStrongObjectPtr if it isn't. AddToRoot only for global lifetime.
+TObjectPtr alone doesn't fix it. UPROPERTY is what the GC sees."</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>How does Unreal's GC decide what to destroy?</summary>
+<div class="a"><p>Mark-and-sweep: from the root set, follow every reflected reference (UPROPERTY / AddReferencedObjects), mark what's reached, destroy the rest.</p></div></details>
+<details class="q"><summary>Does being an object's Outer keep it alive?</summary>
+<div class="a"><p>No. Outer controls naming and package, not reachability.</p></div></details>
+<details class="q"><summary>Why does the crash happen minutes later, somewhere else?</summary>
+<div class="a"><p>GC runs periodically, so the object survives short tests. After it's collected, the raw pointer still holds the old address, and the crash is wherever it's next used.</p></div></details>
+<details class="q"><summary>Is <code>TObjectPtr&lt;T&gt;</code> without UPROPERTY safe?</summary>
+<div class="a"><p>No. UPROPERTY is what makes the reference visible to the GC.</p></div></details>
+<details class="q"><summary>A Slate widget (not a UObject) needs to keep a material alive. What do you use?</summary>
+<div class="a"><p><code>FGCObject</code> with <code>AddReferencedObjects</code>, or a <code>TStrongObjectPtr</code>.</p></div></details>
+<details class="q"><summary>Does <code>TWeakObjectPtr</code> keep things alive? What's it for?</summary>
+<div class="a"><p>No. It's for referring to something you don't own: it returns null once the object is gone, instead of dangling.</p></div></details>
+<details class="q"><summary>Name three bugs that pass a quick test in Unreal.</summary>
+<div class="a"><p>Any three: missing UPROPERTY (GC), missing Modify/transaction (undo), transient state (save/reload), live coding vs restart, editor-only code in a packaged build.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

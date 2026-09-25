@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2,000 Tickers · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Unreal internals</a></nav>
+<main>
+<h1>2,000 tickers: managers, subsystems, instancing</h1>
+<p class="meta">Mock Q6 part 3 (Partial: right pattern, didn't explain why it wins) · 6 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>2,000 ticking actors cost scheduling, a call each and cache misses, and the actors themselves are expensive before they
+tick. A central dispatcher saves the scheduling. The real win is a manager that <b>does the work itself in a tight loop
+over plain data</b>, lives in a <b>tickable world subsystem</b>, and draws with <b>instancing</b>. At huge scale, use Mass.</p>
+</div>
+
+<h2>Why 2,000 individual ticks is worse</h2>
+<ul>
+<li>Each is an <code>FTickFunction</code> the tick manager schedules every frame (sorting, prerequisites, dispatch), plus a
+virtual call, plus a Blueprint VM entry for BP ticks.</li>
+<li>Actors are scattered in memory, so there's a cache miss on every one.</li>
+<li>Often most of the cost is the <b>actors themselves</b>: components, transforms, registration.</li>
+</ul>
+
+<h2>Your Game State dispatcher: what's good, what gets pushed on</h2>
+<div class="table-wrap"><table>
+<tr><th>Good</th><th>Interviewer push</th></tr>
+<tr><td>One tick function instead of 2,000</td><td>A broadcast still makes <b>2,000 Blueprint calls</b>. You saved scheduling, not per-call cost</td></tr>
+<tr><td>Everyone updates at one controllable point in the frame</td><td>Order between listeners isn't guaranteed</td></tr>
+<tr><td>Objects subscribe only while they need updates</td><td><b>Game State</b> is a gameplay/replication class, so using it for engine plumbing is a coupling smell. And binding to a <i>BP</i> Game State hard-references it (<a href="asset-references.html">references</a>)</td></tr>
+</table></div>
+
+<h2>The better versions</h2>
+<ol>
+<li><b>Move the work into the manager</b>: an array of structs (position, velocity), one C++ loop. That's cache friendly, with no calls
+out.</li>
+<li><b>Home it in a <code>UTickableWorldSubsystem</code></b>: world lifetime, no actor, no hard reference
+(<code>GetWorld()-&gt;GetSubsystem&lt;T&gt;()</code>), ticks itself.</li>
+<li><b>Don't have 2,000 actors</b>: one manager owning instance data plus <b>ISM/HISM</b> for rendering.</li>
+<li>Very large counts: <b>Mass Entity</b> (entities, fragments, processors).</li>
+</ol>
+
+<div class="box say"><span class="label">30-second answer</span>
+<p>"Per-actor ticks each cost scheduling and a call, with bad cache locality, and 2,000 actors is expensive before they
+even tick. I've used a central dispatcher so objects only subscribe while they need updates. The better version moves the work
+<i>into</i> the manager: one tick in a tickable world subsystem, looping over a data array, with instanced rendering. At
+very large scale, Mass. It's the same idea as my plugin's cluster component: many shapes in one component."</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Three reasons 2,000 ticking actors are slow.</summary>
+<div class="a"><p>Per-tick scheduling overhead, a call (and BP VM entry) per tick, scattered memory (cache misses). Plus the actors' own overhead.</p></div></details>
+<details class="q"><summary>What does a broadcast dispatcher save, and what doesn't it save?</summary>
+<div class="a"><p>Saves tick scheduling (one tick function). Doesn't save the per-listener call cost.</p></div></details>
+<details class="q"><summary>Where should a tick manager live, and why not Game State?</summary>
+<div class="a"><p><code>UTickableWorldSubsystem</code>: world lifetime, no actor, no BP hard refs. Game State is for gameplay/replicated state, so using it here couples unrelated things.</p></div></details>
+<details class="q"><summary>What's ISM/HISM for?</summary>
+<div class="a"><p>Instanced Static Mesh (Hierarchical adds per-cluster culling/LOD): drawing many copies of a mesh in few draw calls, owned by one component.</p></div></details>
+<details class="q"><summary>How does this connect to your plugin?</summary>
+<div class="a"><p>The cluster component is one component owning many shapes instead of many components: the same "one owner, many items" idea.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

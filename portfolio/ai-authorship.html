@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Authorship Answer · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Portfolio</a></nav>
+<main>
+<h1>Your work vs the AI's, and how you verify</h1>
+<p class="meta">Mock Q2 · <b>Partial</b> · study plan 1.4: "it <b>will</b> be asked, and it is currently my weakest answer" · 6 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Give <b>one concrete story</b> of overruling the AI and <b>one</b> of catching its mistake. Then show that <i>verification is
+yours</i>: a review at the end of each feature, and deliberately testing the things that pass a quick test but fail later.
+Never say "if it works, it's correct".</p>
+</div>
+
+<h2>What went wrong in the mock</h2>
+<ul>
+<li>"The design doc shows my decisions" is true but abstract. They want a 30-second story.</li>
+<li>"I test everything as I go <i>as directed by the agent</i>": that says the AI writes the code <b>and</b> decides how to
+check it. That's exactly what they're probing.</li>
+<li>"If it works without performance issues, it's correct" is the classic red flag. <b>Not seeing a failure doesn't prove
+there isn't one.</b></li>
+</ul>
+
+<h2>Your evidence (use it)</h2>
+<ul>
+<li><b>Overruled the AI:</b> it proposed typed sockets with GUIDs; you rejected both because THRUST's attach UX never needed
+them, and the design doc records why. Also: killing node retyping on a semantics argument, and correcting the AI's inverted
+cluster/Niagara model.</li>
+<li><b>Caught the AI:</b> a previous assistant left the build broken with a botched merge. You caught it by <b>diffing
+against the last compiling commit</b> rather than trusting its account.</li>
+<li><b>Process:</b> each major Part ends with a whole-branch review, and the findings get fixed in their own commits
+(<code>31c86b6</code>: 8 findings, <code>6862f4f</code>: 6, <code>9c46084</code>: 8).</li>
+<li><b>Reasoning, not observing:</b> commit <code>5e6ac53</code> records that an invariant depends on
+<code>OnRegister</code>.</li>
+<li><b>WadOfGore:</b> you're porting the lecture code in by hand rather than merging it: "lecture work gets ported in by
+hand from here on, not merged".</li>
+</ul>
+
+<h2>What you specifically test</h2>
+<p>The list on the <a href="../unreal/garbage-collection.html">GC page</a>: GC (raw pointers), undo/redo, save and reload,
+full restart vs live coding, packaged vs editor.</p>
+
+<div class="box say"><span class="label">45-second answer</span>
+<p>"Authorship: the architecture is mine, and I can show where I overruled the AI. For example, it proposed typed sockets
+with GUIDs; I rejected both because the game's attach UX never needed them, and the design doc records why.
+Verification: I don't treat 'it runs' as proof. Each feature ends with a whole-branch review, and the findings are fixed
+in their own commits. You can see them in the history. I specifically test what passes a quick test but fails later in
+Unreal: undo, save and reload, a full restart rather than hot reload. And my C++ reading speed is the weak point. Where
+I can't yet explain a line, I make the AI explain it until I can, and that's the gap I'm closing."</p>
+</div>
+
+<div class="box warn"><span class="label">Vocabulary rule</span>
+<p>Delete "vibe-coded" from your vocabulary. State the gap once, plainly, without adjectives, and never volunteer a
+second one.</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Why is "I test as the agent directs" a bad answer?</summary>
+<div class="a"><p>It says the AI both writes the code and decides how it's checked. Verification is the part that must visibly be yours.</p></div></details>
+<details class="q"><summary>Give your 10-second "I overruled the AI" story.</summary>
+<div class="a"><p>It proposed typed sockets with GUIDs; I rejected both because the actual attach UX never needed them, and the design doc records the reasoning.</p></div></details>
+<details class="q"><summary>Give your 10-second "I caught the AI" story.</summary>
+<div class="a"><p>An assistant left the build broken after a botched merge. I found it by diffing against the last compiling commit instead of trusting its summary.</p></div></details>
+<details class="q"><summary>Why is "it works without performance issues, so it's correct" a red flag?</summary>
+<div class="a"><p>Many Unreal bugs work in testing and fail later (GC, undo, reload, packaged builds). Not having seen a failure isn't evidence there's none.</p></div></details>
+<details class="q"><summary>What evidence in git shows a verification process?</summary>
+<div class="a"><p>End-of-feature whole-branch reviews whose findings are fixed in their own commits (e.g. 8, 6 and 8 findings on three Parts).</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

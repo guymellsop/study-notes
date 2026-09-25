@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Course C++ Vocabulary · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>The C++ vocabulary the course uses</h1>
+<p class="meta">Reference page · every item appears in WadOfGore's source · 8 min</p>
+
+<div class="box tldr"><span class="label">How to use this page</span>
+<p>When your teacher types something fast and moves on, look it up here. Each entry answers "what is it" and
+"why here".</p>
+</div>
+
+<h2>Property specifiers</h2>
+<div class="table-wrap"><table>
+<tr><th>Specifier</th><th>Editable where</th><th>Used for</th></tr>
+<tr><td><code>EditDefaultsOnly</code></td><td>Blueprint class defaults only</td><td>Tuning shared by every instance: <code>InputConfigDataAsset</code>, <code>RelaxThreshold</code>, activation policy</td></tr>
+<tr><td><code>EditAnywhere</code></td><td>Defaults <i>and</i> each placed instance</td><td>Per-instance values (a door's key ID)</td></tr>
+<tr><td><code>VisibleAnywhere</code></td><td>Shown, not assignable</td><td>Component pointers: you can edit the component's <i>settings</i>, but not swap it</td></tr>
+<tr><td><code>VisibleDefaultsOnly</code></td><td>Shown in defaults</td><td>Runtime anim values (<code>GroundSpeed</code>)</td></tr>
+<tr><td><code>BlueprintReadOnly</code> / <code>ReadWrite</code></td><td>(graph access)</td><td>Can Blueprint graphs get / set it</td></tr>
+<tr><td><code>meta = (AllowPrivateAccess = "true")</code></td><td></td><td>Lets a <b>private</b> C++ member still be <code>BlueprintReadOnly</code>. C++ stays encapsulated, Blueprint can still read it</td></tr>
+<tr><td><code>Category = "Camera"</code></td><td></td><td>Groups it in the Details panel; <code>"A|B"</code> makes sub-groups</td></tr>
+</table></div>
+<p><b>No <code>UPROPERTY</code> at all</b> (like <code>IdleElapsedTime</code>) is fine for plain numbers. For a
+<b>UObject pointer</b> it's a crash waiting to happen: see <a href="../unreal/garbage-collection.html">GC</a>.</p>
+
+<h2>Creating and finding things</h2>
+<div class="table-wrap"><table>
+<tr><th>Code</th><th>Meaning</th></tr>
+<tr><td><code>CreateDefaultSubobject&lt;T&gt;(TEXT("Name"))</code></td><td>Make a component <b>in the constructor</b>. The name must be unique per actor and shouldn't change later, or saved Blueprints lose their overrides.</td></tr>
+<tr><td><code>NewObject&lt;T&gt;(Outer)</code></td><td>Make a UObject at runtime.</td></tr>
+<tr><td><code>GetWorld()-&gt;SpawnActor&lt;T&gt;(...)</code></td><td>Make an actor at runtime (the weapon, once you spawn it from C++).</td></tr>
+<tr><td><code>Cast&lt;T&gt;(Obj)</code></td><td>Returns null if <code>Obj</code> isn't a <code>T</code>. Use it when failure is a normal case you'll handle.</td></tr>
+<tr><td><code>CastChecked&lt;T&gt;(Obj)</code></td><td>Asserts (crashes in dev builds) if it isn't. Use it when failure means the project is set up wrong.</td></tr>
+<tr><td><code>TEXT("...")</code></td><td>A wide-character string literal, the type <code>FString</code> and logging expect on every platform.</td></tr>
+</table></div>
+
+<h2>Asserts: check, checkf, ensure</h2>
+<div class="table-wrap"><table>
+<tr><th>Macro</th><th>On failure</th><th>In Shipping builds</th></tr>
+<tr><td><code>check(x)</code></td><td>Crash with file/line</td><td>Removed (not evaluated)</td></tr>
+<tr><td><code>checkf(x, TEXT("msg"))</code></td><td>Crash with your message</td><td>Removed</td></tr>
+<tr><td><code>ensure(x)</code> / <code>ensureMsgf</code></td><td>Logs a callstack <b>once</b>, carries on</td><td>Still evaluated, doesn't break</td></tr>
+</table></div>
+<p>The course uses <code>checkf(InputConfigDataAsset, ...)</code> because a missing data asset is a <b>setup error</b>:
+crash loudly now in the editor, with a message that says what to fix. <b>Never put code with side effects inside
+<code>check()</code></b>. It disappears in Shipping.</p>
+
+<h2>Header tricks</h2>
+<ul>
+<li><b>Forward declaration</b>: <code>class USpringArmComponent;</code> at the top of a header says "this type exists".
+It's enough for a <i>pointer</i>, so the heavy <code>#include</code> moves to the .cpp. That makes compiles faster and avoids
+include chains (<a href="../cpp/includes-unity-builds.html">includes page</a>).</li>
+<li><b><code>class UInputComponent* PlayerInputComponent</code></b> in a parameter is an inline forward declaration: the
+same thing in one go.</li>
+<li><b><code>FORCEINLINE</code></b>: "really inline this" for tiny getters, so there's no function-call overhead.</li>
+<li><b><code>#pragma region Inputs</code> … <code>#pragma endregion</code></b>: only folds code in the IDE. The
+compiler ignores it.</li>
+<li><b><code>//~ Begin APawn Interface</code></b>: an Epic comment convention marking a group of overrides from one base class.</li>
+<li><b><code>GENERATED_BODY()</code></b>: where Unreal's header tool pastes the reflection code. It also gives you
+<code>Super</code> (the parent class) and <code>ThisClass</code>.</li>
+<li><b><code>#include "X.generated.h"</code> must be the last include</b> in a reflected header.</li>
+</ul>
+
+<h2>The Debug helper, closely</h2>
+<pre><code>namespace Debug {
+    static void Print(const FString&amp; Msg, const FColor&amp; Color = FColor::MakeRandomColor(), int32 InKey = -1) {
+        if (GEngine) {
+            GEngine-&gt;AddOnScreenDebugMessage(InKey, 7.f, Color, Msg);
+            UE_LOG(LogTemp, Warning, TEXT("%s"), *Msg);
+        }
+    }
+}</code></pre>
+<ul>
+<li><b><code>const FString&amp;</code></b>: pass by const reference, so no copy of the string
+(<a href="../cpp/pointers-references-const.html">refs and const</a>).</li>
+<li><b>Default arguments</b>: <code>Debug::Print("hi")</code> picks a random colour and key −1.</li>
+<li><b>Key −1</b> = always add a new line. The same positive key <b>replaces</b> the previous message, which is great for
+values that change every frame.</li>
+<li><b><code>*Msg</code></b>: <code>FString</code>'s <code>operator*</code> gives the raw <code>TCHAR*</code> that
+<code>%s</code> needs. Forgetting the <code>*</code> is a classic crash/garbage bug.</li>
+<li><b><code>static</code> in a header</b>: each .cpp that includes it gets its own private copy. It works;
+<code>inline</code> would share one copy. Harmless for a debug helper.</li>
+<li><b><code>if (GEngine)</code></b>: GEngine can be null very early in startup and in some commandlets.</li>
+</ul>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary><code>EditDefaultsOnly</code> vs <code>EditAnywhere</code>?</summary>
+<div class="a"><p>Defaults-only: editable in the Blueprint class, not per placed instance. Anywhere: both.</p></div></details>
+<details class="q"><summary>Why are component pointers <code>VisibleAnywhere</code> rather than <code>EditAnywhere</code>?</summary>
+<div class="a"><p>You want to edit the component's <i>properties</i> in the Details panel, not reassign the pointer to a different object.</p></div></details>
+<details class="q"><summary>What does <code>AllowPrivateAccess</code> allow?</summary>
+<div class="a"><p>A <code>private</code> C++ member to still be exposed as <code>BlueprintReadOnly/ReadWrite</code>.</p></div></details>
+<details class="q"><summary><code>check</code> vs <code>ensure</code>: which one crashes, and which survives in Shipping?</summary>
+<div class="a"><p><code>check</code> crashes but is compiled out of Shipping. <code>ensure</code> logs once and carries on, and is still evaluated in Shipping.</p></div></details>
+<details class="q"><summary>Why is it dangerous to write <code>check(DoSetup())</code>?</summary>
+<div class="a"><p>In Shipping the whole expression disappears, so <code>DoSetup()</code> never runs.</p></div></details>
+<details class="q"><summary>When is a forward declaration enough, and when do you need the include?</summary>
+<div class="a"><p>Enough for pointers and references to the type. You need the full include to call its functions, access members, inherit from it, or hold it by value.</p></div></details>
+<details class="q"><summary>Why <code>*Msg</code> in <code>UE_LOG(..., TEXT("%s"), *Msg)</code>?</summary>
+<div class="a"><p><code>%s</code> needs a <code>TCHAR*</code>. <code>*</code> on an <code>FString</code> returns its raw character pointer.</p></div></details>
+<details class="q"><summary>What does a positive key do in <code>AddOnScreenDebugMessage</code>?</summary>
+<div class="a"><p>A new message with the same key replaces the old one, instead of stacking a new line.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

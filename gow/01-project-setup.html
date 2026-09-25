@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Setup · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Project setup: modules, Build.cs, redirects</h1>
+<p class="meta">Course days 1–2 and GitHub setup · WadOfGore commit <code>f27f647</code> · 5 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Your game's C++ is a <b>module</b>. <code>WadOfGore.Build.cs</code> says which other modules it may use.
+If you <code>#include</code> something from a module that isn't listed, you get a <b>linker error</b>, not a compile
+error. The <b>redirects</b> in <code>DefaultEngine.ini</code> are why Blueprints copied from the lecture project
+still find their C++ parent classes after the rename.</p>
+</div>
+
+<h2>What a module is</h2>
+<p>A module is one unit of compiled code: one DLL in the editor. Your project has one, <code>WadOfGore</code>. The engine
+itself is hundreds of modules: <code>Engine</code>, <code>EnhancedInput</code>, <code>GameplayAbilities</code> and so on.</p>
+<ul>
+<li><code>WADOFGORE_API</code> in front of a class means "export this from the DLL so other modules can use it".
+Unreal generates the macro from the module name.</li>
+<li><code>WadOfGore.Target.cs</code> / <code>WadOfGoreEditor.Target.cs</code> describe <i>what gets built</i> (the game
+vs. the editor). <code>WadOfGore.Build.cs</code> describes <i>the module</i>.</li>
+</ul>
+
+<h2>Build.cs: dependencies</h2>
+<pre><code>PublicDependencyModuleNames.AddRange(new string[] {
+    "Core", "CoreUObject", "Engine", "InputCore",
+    "GameplayTags", "EnhancedInput", "GameplayTasks", "GameplayAbilities"
+});</code></pre>
+<p>Each lesson that brought in a new system also added a line here: tags → <code>GameplayTags</code>, input →
+<code>EnhancedInput</code>, GAS → <code>GameplayAbilities</code> + <code>GameplayTasks</code> (abilities run
+<i>tasks</i>, so GAS needs it).</p>
+<div class="table-wrap"><table>
+<tr><th>List</th><th>Meaning</th><th>Use when</th></tr>
+<tr><td><code>Public</code></td><td>My <b>headers</b> include this module's headers, so anyone who includes me needs it too.</td><td>A type from that module appears in your <code>.h</code> (e.g. <code>UAbilitySystemComponent</code> as a base class).</td></tr>
+<tr><td><code>Private</code></td><td>Only my <code>.cpp</code> files use it.</td><td>Only used inside implementation. Keeps other modules' builds lighter.</td></tr>
+</table></div>
+<p>A game has one module, so putting everything in Public costs nothing. It matters once you write plugins with
+several modules, like your ModularShapes plugin.</p>
+<p><b>Plugins are separate.</b> <code>GameplayAbilities</code> is a <i>plugin</i>, so it also has to be enabled in the
+<code>.uproject</code>. That turns the plugin on; Build.cs lets your code link against it. You need both.</p>
+
+<h2>The redirects</h2>
+<pre><code>+ActiveGameNameRedirects=(OldGameName="/Script/GOW",NewGameName="/Script/WadOfGore")</code></pre>
+<p>A Blueprint stores its C++ parent as a path like <code>/Script/GOW.WarriorHeroCharacter</code> (module
+name + class name). You renamed the module from <code>GOW</code> to <code>WadOfGore</code>, so without this line
+every copied Blueprint would lose its parent class and fail to load. The redirect tells the loader "anything that says GOW
+now means WadOfGore."</p>
+<p>Related: <b>Core Redirects</b> (<code>[CoreRedirects]</code>, <code>+ClassRedirects</code>) do the same job when you
+rename a <i>class</i> or a <i>property</i> rather than the whole module.</p>
+
+<div class="box yours"><span class="label">Your project</span>
+<p>Your baseline commit message explains the fork: structure copied from the lecture reference, renamed to its own
+module, "lecture work gets ported in by hand from here on, not merged". Typing it in yourself instead of
+merging it is also the better way to learn it.</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<p class="hint">Answer in your head, then tap.</p>
+<details class="q"><summary>You add <code>#include "AbilitySystemComponent.h"</code> and use it, but forgot to add <code>GameplayAbilities</code> to Build.cs. What kind of error do you get?</summary>
+<div class="a"><p>Usually an <b>unresolved external symbol</b> (a linker error), or "cannot open include file" if the include path isn't set up. The compiler needs the header; the linker needs the module's compiled code. Build.cs provides both.</p></div></details>
+<details class="q"><summary>Public vs Private dependency: which one when a type from that module appears in your header?</summary>
+<div class="a"><p><b>Public.</b> Anything that includes your header also needs that module's headers.</p></div></details>
+<details class="q"><summary>Why did the copied Blueprints need <code>ActiveGameNameRedirects</code>?</summary>
+<div class="a"><p>Blueprints reference their C++ parent by <code>/Script/ModuleName.ClassName</code>. The module was renamed GOW → WadOfGore, so the old paths would fail to resolve without a redirect.</p></div></details>
+<details class="q"><summary>What does <code>WADOFGORE_API</code> do?</summary>
+<div class="a"><p>It exports the class from the module's DLL, so other modules can link to it.</p></div></details>
+<details class="q"><summary>GAS is enabled in the .uproject. Why add it to Build.cs as well?</summary>
+<div class="a"><p>The .uproject <i>enables the plugin</i>, meaning it gets loaded. Build.cs lets <i>your module compile and link against it</i>. They are two separate steps.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blueprint and C++ · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Unreal internals</a></nav>
+<main>
+<h1>The Blueprint / C++ boundary</h1>
+<p class="meta">Study plan 2.2 · "common interview ground, and the daily work of a tools/tech-art hybrid" · 7 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>C++ owns the <b>systems</b> (structure, performance, things many classes share). Blueprint child classes own the
+<b>content</b> (which mesh, which anim BP, which data asset, tuning values). <code>UPROPERTY</code>/<code>UFUNCTION</code>
+specifiers are the doors between them. WadOfGore follows this exactly: <code>AWarriorHeroCharacter</code> in C++,
+<code>BP_HeroCharacter</code> just fills in assets.</p>
+</div>
+
+<h2>Functions</h2>
+<div class="table-wrap"><table>
+<tr><th>Specifier</th><th>Blueprint sees</th><th>Use</th></tr>
+<tr><td><code>BlueprintCallable</code></td><td>A node with exec pins</td><td>Does something / changes state</td></tr>
+<tr><td><code>BlueprintPure</code></td><td>A node with no exec pins</td><td>Just returns a value. <b>Re-runs for every node it's plugged into</b>, so keep it cheap</td></tr>
+<tr><td><code>BlueprintImplementableEvent</code></td><td>An event BP must implement</td><td>C++ says "this happens", BP decides what it looks like (VFX, sound)</td></tr>
+<tr><td><code>BlueprintNativeEvent</code></td><td>An event BP may override</td><td>C++ default (<code>_Implementation</code>), BP can replace it</td></tr>
+</table></div>
+
+<h2>Properties</h2>
+<p>See the table on <a href="../gow/08-cpp-toolkit.html">the course's C++ vocabulary</a>: <code>EditDefaultsOnly</code>,
+<code>EditAnywhere</code>, <code>VisibleAnywhere</code>, <code>BlueprintReadOnly/ReadWrite</code>,
+<code>Category</code>, <code>meta = (...)</code> (<code>ClampMin</code>, <code>EditCondition</code>,
+<code>AllowPrivateAccess</code>, <code>Categories</code> for tags).</p>
+
+<h2>What goes where</h2>
+<div class="table-wrap"><table>
+<tr><th>C++</th><th>Blueprint</th></tr>
+<tr><td>Base classes, core loops, anything per-frame over many objects</td><td>Asset assignment, tuning, one-off level scripting</td></tr>
+<tr><td>Things many classes cast to (C++ casts don't drag BP assets in)</td><td>Prototyping before you know the shape</td></tr>
+<tr><td>Math-heavy or engine-API-heavy code</td><td>VFX/SFX hooks via implementable events</td></tr>
+</table></div>
+
+<h2>Data-driven instead of a class per variant</h2>
+<ul>
+<li><b>Data Assets</b> (<code>UDataAsset</code> / <code>UPrimaryDataAsset</code>): one object of typed data. WadOfGore's
+input config is one.</li>
+<li><b>Data Tables</b>: rows of a struct, often edited as CSV. Good for long lists (weapons, enemy stats).</li>
+<li>You've already done this in your survival project's harvesting and interaction systems. <b>Say that in the
+interview.</b></li>
+</ul>
+
+<h2>Tools side</h2>
+<ul>
+<li><b>Blueprint Function Libraries</b>: static helper nodes available everywhere.</li>
+<li><b>Editor Utility Widgets / Blueprints</b>, <b>Scripted Asset Actions</b>, <b>Python</b>: automating the editor.</li>
+<li>Blueprint <b>nativisation was removed</b> in UE5. Don't cite it.</li>
+</ul>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>BlueprintCallable vs BlueprintPure?</summary>
+<div class="a"><p>Callable has exec pins (it does something). Pure has none and just returns a value, but it re-evaluates for each connected consumer.</p></div></details>
+<details class="q"><summary>ImplementableEvent vs NativeEvent?</summary>
+<div class="a"><p>Implementable: no C++ body, BP provides it. Native: a C++ default in <code>Func_Implementation</code> that BP can override.</p></div></details>
+<details class="q"><summary>Why keep the hero's logic in C++ and only assets in <code>BP_HeroCharacter</code>?</summary>
+<div class="a"><p>Performance and structure in C++; designers can swap assets and tune without code; and casting to the C++ class doesn't hard-reference the BP's assets.</p></div></details>
+<details class="q"><summary>Data asset vs data table: when each?</summary>
+<div class="a"><p>Data asset: one structured configuration object (an input config, a character's start-up data). Data table: many rows of the same struct (a list of weapons).</p></div></details>
+<details class="q"><summary>What UE4 feature must you not cite as a BP performance fix?</summary>
+<div class="a"><p>Blueprint nativisation. It was removed in UE5.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

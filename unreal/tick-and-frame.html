@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tick and Frame Order · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Unreal internals</a></nav>
+<main>
+<h1>Tick controls and frame order</h1>
+<p class="meta">Mock Q6 parts 1–2 (Partial / Miss) + the timer trap from Q5 · 9 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Tick isn't the enemy; <b>unnecessary per-frame work</b> is. You control <i>whether</i> something ticks
+(<code>bCanEverTick</code>, enable/disable), <i>how often</i> (<code>TickInterval</code>) and <i>when in the frame</i>
+(tick groups, prerequisites). Get "when" wrong and one thing follows another a frame late: that's drift.</p>
+</div>
+
+<h2>The controls</h2>
+<div class="table-wrap"><table>
+<tr><th>Control</th><th>Does</th></tr>
+<tr><td><code>PrimaryActorTick.bCanEverTick</code></td><td>Whether a tick function is <b>registered at all</b>. False = it can <i>never</i> be enabled later.</td></tr>
+<tr><td><code>bStartWithTickEnabled</code></td><td>Registered, but starts off.</td></tr>
+<tr><td><code>SetActorTickEnabled(bool)</code></td><td>Toggle at runtime: tick only while needed.</td></tr>
+<tr><td><code>TickInterval</code> / <code>SetActorTickInterval</code></td><td>Every N seconds. Still scheduled by the tick system, in its group.</td></tr>
+<tr><td><code>TickGroup</code></td><td><b>When</b> in the frame it runs.</td></tr>
+<tr><td><code>AddTickPrerequisiteActor/Component</code></td><td>"Tick me after that."</td></tr>
+<tr><td><b>Components tick separately</b></td><td>Disabling the actor's tick does <b>not</b> stop its components. Each has <code>PrimaryComponentTick</code>. Common gotcha.</td></tr>
+<tr><td><code>bTickEvenWhenPaused</code></td><td>Pause behaviour.</td></tr>
+<tr><td><code>UTickableWorldSubsystem</code> / <code>FTickableGameObject</code></td><td>Tick something that isn't an actor.</td></tr>
+<tr><td>Significance Manager, anim "only tick when rendered"</td><td>Less work for far or off-screen things.</td></tr>
+</table></div>
+<p>WadOfGore: the base character sets <code>bCanEverTick = false</code> (good). The weapon base sets it
+<code>true</code> with no Tick (wasteful: see <a href="../gow/07-abilities-weapons.html">the weapon page</a>).</p>
+
+<h2>Frame order</h2>
+<pre><code>TG_PrePhysics → TG_StartPhysics → TG_DuringPhysics → TG_EndPhysics
+             → TG_PostPhysics → TG_PostUpdateWork → TG_LastDemotable</code></pre>
+<p>The physics step runs between StartPhysics and EndPhysics. Kinematic things physics must see (moved collision) go in
+<b>PrePhysics</b>. Things that should see this frame's physics results (a camera following a ragdoll) go in
+<b>PostPhysics</b>.</p>
+
+<h3>The drift question, rephrased</h3>
+<p>"Within one frame, which updates first, the particles or the collision following them? If collision reads particle
+positions <i>before</i> Niagara updates, it's always one frame behind. That lag is the drift."</p>
+<ul>
+<li>Check both tick groups (Niagara has its own <i>Tick Behavior</i> setting).</li>
+<li>Force order: <code>AddTickPrerequisiteComponent(NiagaraComponent)</code>.</li>
+<li><b>Tension:</b> physics needs collision placed in PrePhysics; a follower in PostPhysics is right for rendering but a frame late for physics.</li>
+<li>GPU particles: reading positions back to the CPU has latency, so CPU collision following GPU particles always lags.</li>
+<li><b>Senior answer: one authority.</b> Compute positions once in your code, move collision in PrePhysics, and <b>push the
+same positions into Niagara</b>. No drift, by construction.</li>
+</ul>
+<p>The same bug in miniature: <a href="../gow/05-anim-instances.html">WadOfGore's hero anim instance</a> reads a value
+the thread-safe update writes later in the same frame.</p>
+
+<h2>The timer trap (from Q5)</h2>
+<ul>
+<li>A timer or Delay loop with an interval <b>shorter than a frame</b> is <b>not</b> smoother than Tick. The timer manager runs
+once per frame, and a looping timer can fire <b>several times in one frame</b> to catch up.</li>
+<li>So "avoid Tick" workarounds can cost <i>more</i>, and run at a point in the frame you don't control.</li>
+<li>Better lesson: <b>"The problem was never Tick, it was unnecessary per-frame work."</b> That's your ready-made "time I was
+wrong" story.</li>
+</ul>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary><code>bCanEverTick = false</code>: can you call <code>SetActorTickEnabled(true)</code> later?</summary>
+<div class="a"><p>No. The tick function was never registered. Use <code>bCanEverTick = true</code> + <code>bStartWithTickEnabled = false</code> if you want to toggle.</p></div></details>
+<details class="q"><summary>You disable an actor's tick. Do its components stop ticking?</summary>
+<div class="a"><p>No. Components have their own tick functions.</p></div></details>
+<details class="q"><summary>List the tick groups in order.</summary>
+<div class="a"><p>PrePhysics → StartPhysics → DuringPhysics → EndPhysics → PostPhysics → PostUpdateWork → LastDemotable.</p></div></details>
+<details class="q"><summary>A collision follower lags particles by one frame. Two fixes?</summary>
+<div class="a"><p>Tick prerequisite so it runs after the Niagara component. Better: make one authority (your code) compute positions, move collision in PrePhysics and feed the same positions to Niagara.</p></div></details>
+<details class="q"><summary>Why isn't a 0.001s looping timer smoother than Tick?</summary>
+<div class="a"><p>Timers are processed once per frame. A sub-frame interval just fires several times in the same frame to catch up.</p></div></details>
+<details class="q"><summary>Tell the corrected Tick story in one sentence.</summary>
+<div class="a"><p>"The problem was never Tick, it was unnecessary per-frame work. Per-frame work belongs in Tick, at the right point in the frame, and only while needed."</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

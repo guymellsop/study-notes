@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Refs, Pointers, Const · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">C++</a></nav>
+<main>
+<h1>Values, references, pointers, const</h1>
+<p class="meta">Study plan 2.1 (reading C++, not writing it) · 7 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>A <b>value</b> is a copy. A <b>reference</b> (<code>&amp;</code>) is another name for something that already exists,
+and can't be null. A <b>pointer</b> (<code>*</code>) holds an address. It can be null and can be re-pointed. <b><code>const</code></b>
+promises "I won't change it". Engine code passes big things as <code>const T&amp;</code>: no copy, no changes.</p>
+</div>
+
+<h2>The same symbol, two jobs</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>In a declaration (a type)</th><th>In an expression (an action)</th></tr>
+<tr><td><code>&amp;</code></td><td><code>int&amp; R = X;</code> R is a reference to X</td><td><code>&amp;X</code> "address of X" → a pointer</td></tr>
+<tr><td><code>*</code></td><td><code>int* P;</code> P is a pointer to an int</td><td><code>*P</code> "the thing P points at" (dereference)</td></tr>
+</table></div>
+<p><code>-&gt;</code> is just shorthand: <code>P-&gt;Foo</code> = <code>(*P).Foo</code>. That's why every UObject in
+Unreal code is used with <code>-&gt;</code>: you always hold UObjects by pointer.</p>
+
+<h2>Passing parameters</h2>
+<div class="table-wrap"><table>
+<tr><th>Signature</th><th>Copies?</th><th>Can change caller's?</th><th>Use for</th></tr>
+<tr><td><code>void F(FVector V)</code></td><td>Yes</td><td>No</td><td>Small types: <code>int32</code>, <code>float</code>, <code>bool</code>, and <code>FVector</code> is borderline fine</td></tr>
+<tr><td><code>void F(const FString&amp; S)</code></td><td><b>No</b></td><td>No</td><td><b>The default for anything bigger than a few numbers</b>: strings, arrays, structs</td></tr>
+<tr><td><code>void F(FHitResult&amp; OutHit)</code></td><td>No</td><td><b>Yes</b></td><td>"Out" parameters: the function fills it in. Unreal names them <code>Out...</code></td></tr>
+<tr><td><code>void F(AActor* A)</code></td><td>Copies the address only</td><td>Can change the <i>actor</i></td><td>UObjects, or anything that might be "none" (null)</td></tr>
+</table></div>
+<p>WadOfGore examples: <code>Input_Move(const FInputActionValue&amp; InputActionValue)</code>,
+<code>FindNativeInputActionByTag(const FGameplayTag&amp; InInputTag)</code>, <code>Debug::Print(const FString&amp; Msg, ...)</code>.</p>
+
+<h2>const in the places it shows up</h2>
+<ul>
+<li><code>const FVector ForwardDirection = ...;</code>: a local that won't change. It makes the code easier to read ("this
+is set once") and the compiler stops you reassigning it by mistake.</li>
+<li><code>UInputAction* FindNativeInputActionByTag(...) <b>const</b>;</code>: a <b>const member function</b>. It promises not
+to modify the object it's called on. That's what lets you call it through a <code>const UDataAsset_InputConfig*</code>, which is
+what <code>BindNativeInputAction</code> receives.</li>
+<li><code>for (const FWarriorInputActionConfig&amp; Config : NativeInputActions)</code>: loop by const reference, so no
+copy per element. Writing <code>for (FWarriorInputActionConfig Config : ...)</code> copies every element. It still works,
+but slower, and edits to <code>Config</code> would change nothing.</li>
+</ul>
+
+<h2>Declaration vs definition, header vs cpp</h2>
+<ul>
+<li><b>Declaration</b>: "this exists, here's its shape". Goes in the <code>.h</code> so others can use it.</li>
+<li><b>Definition</b>: "here's the actual code / the actual storage". Goes in a <code>.cpp</code>, once.</li>
+<li>Exceptions that live in headers: templates, <code>inline</code>/<code>FORCEINLINE</code> functions (the getters),
+and class bodies.</li>
+</ul>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>In <code>int* P = &amp;X;</code> what do <code>*</code> and <code>&amp;</code> mean?</summary>
+<div class="a"><p><code>int*</code>: P's type is "pointer to int". <code>&amp;X</code>: the address of X.</p></div></details>
+<details class="q"><summary>Why pass <code>FString</code> as <code>const FString&amp;</code>?</summary>
+<div class="a"><p>No copy (strings allocate), and <code>const</code> guarantees the function won't change the caller's string.</p></div></details>
+<details class="q"><summary>What does <code>const</code> after a member function's parentheses promise?</summary>
+<div class="a"><p>It won't modify the object's members. That's needed to call it through a const pointer or reference.</p></div></details>
+<details class="q"><summary>Reference vs pointer: two differences.</summary>
+<div class="a"><p>A reference can't be null and can't be re-seated to another object. A pointer can be null and can be re-pointed. (And you use <code>.</code> vs <code>-&gt;</code>.)</p></div></details>
+<details class="q"><summary>What's wrong with <code>for (FBigStruct S : Array) { S.Value = 0; }</code>?</summary>
+<div class="a"><p>It copies each element, and sets the <i>copy</i>'s value, so the array is unchanged. Use <code>FBigStruct&amp; S</code> to modify, or <code>const FBigStruct&amp;</code> to read.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

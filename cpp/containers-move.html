@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TArray References · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">C++</a></nav>
+<main>
+<h1>Containers move: the TArray reference bug</h1>
+<p class="meta">Mock Q7 · result: <b>Miss</b> · 6 min · "the single most common serious bug in C++, learn it cold"</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>A <code>TArray</code> keeps its elements in one block of memory. When it runs out of room, <code>Add</code>
+<b>allocates a bigger block, moves everything, and frees the old one</b>. Any reference or pointer you held into the old
+block now points at freed memory. <b>Rule: a reference into an array is valid only until the array's next modification.</b></p>
+</div>
+
+<h2>The code from the question</h2>
+<pre><code>TArray&lt;FShapeParams&gt; Shapes;
+Shapes.Add(FShapeParams());
+FShapeParams&amp; First = Shapes[0];         // reference into the array's memory
+for (int32 i = 0; i &lt; 100; ++i) { Shapes.Add(FShapeParams()); }
+First.Radius = 50.0f;                    // dangling reference: undefined behaviour</code></pre>
+<p>Each <code>Add</code> past capacity reallocates. <code>First</code> still points into the <b>freed</b> block. The write
+is <b>undefined behaviour</b>. At best it's lost (the real element is unchanged). At worst it corrupts memory
+the allocator has since handed to something else.</p>
+
+<h2>Why it "works" the first 20 times</h2>
+<ul>
+<li>No reallocation happens while there's spare capacity (<code>Num() &lt; Max()</code>). Add one more element and it breaks.</li>
+<li>Freed memory usually stays writable for a while, so the write "succeeds" silently. The crash comes later, somewhere
+unrelated, when that memory is reused.</li>
+<li><b>Same failure shape as the GC bug</b> (<a href="../unreal/garbage-collection.html">mock Q3</a>): works in testing,
+fails later, crashes far from the cause. Naming that shape in an interview is worth as much as the API detail.</li>
+</ul>
+
+<h2>Where else this applies</h2>
+<ul>
+<li><code>TMap</code> / <code>TSet</code>: adding can rehash and move values.</li>
+<li><code>std::vector</code>: identical. Interviewers may ask it as "iterator invalidation".</li>
+<li><code>RemoveAt</code> shifts later elements down; <code>RemoveAtSwap</code> moves the <i>last</i> element into the
+hole. Either way, <b>stored indices</b> can go stale too.</li>
+<li>Adding to an array <b>while looping over it</b> with a range-for: the same bug in disguise.</li>
+</ul>
+
+<h2>Fixes</h2>
+<ol>
+<li><b>Store the index</b>, and index at the point of use: <code>Shapes[Idx].Radius = 50.f;</code>. The normal answer.</li>
+<li>Re-acquire the reference after the adds.</li>
+<li><code>Reserve(101)</code> before the loop avoids <i>this</i> reallocation but is fragile. It hides the bug rather than
+fixing it.</li>
+<li>For long-lived references, use stable storage: an array of pointers to individually allocated objects,
+<code>TIndirectArray</code>, or UObjects.</li>
+</ol>
+
+<div class="box say"><span class="label">Say it in an interview (tie it to your work)</span>
+<p>"My plugin's shape tree stores pointers to individually allocated UObjects, so a node pointer stays valid when the tree
+changes. An array-of-structs design would have had exactly this bug."</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Why does a reference into a TArray break after <code>Add</code>?</summary>
+<div class="a"><p>If capacity runs out, Add allocates a new block, moves the elements and frees the old block. The reference points into freed memory.</p></div></details>
+<details class="q"><summary>Why might the bug not show up in testing?</summary>
+<div class="a"><p>No reallocation happens while there's spare capacity, and writing into freed memory often "succeeds" silently until it's reused.</p></div></details>
+<details class="q"><summary>What is <code>Num()</code> vs <code>Max()</code>?</summary>
+<div class="a"><p>Num = elements in use. Max = capacity allocated. Reallocation happens when Num would go past Max.</p></div></details>
+<details class="q"><summary>Best fix, and why is <code>Reserve</code> alone a weak fix?</summary>
+<div class="a"><p>Store the index and look it up at use. Reserve only avoids reallocation for that exact count, so the next change to the code brings the bug back.</p></div></details>
+<details class="q"><summary><code>RemoveAtSwap</code> vs <code>RemoveAt</code>: what goes stale?</summary>
+<div class="a"><p>RemoveAt shifts every later element down one. RemoveAtSwap moves the last element into the hole (faster, changes order). Both invalidate stored indices for the moved elements.</p></div></details>
+<details class="q"><summary>What's the std:: name for this category of bug?</summary>
+<div class="a"><p>Iterator (and reference/pointer) invalidation, e.g. <code>std::vector::push_back</code> reallocating.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

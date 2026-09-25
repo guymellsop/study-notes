@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Profiling Triage · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Performance</a></nav>
+<main>
+<h1>22 fps, 20 minutes: profiling triage</h1>
+<p class="meta">Mock Q10 · <b>Pass</b>, your strongest answer, with corrections · study plan 1.3 · 8 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p><b>Rule out settings, then measure, then fix.</b> <code>stat unit</code> tells you <i>which thread</i> is the
+bottleneck: Game, Draw or GPU. Each has completely different causes and fixes. Don't guess "it's an artist's level so it's
+the GPU".</p>
+</div>
+
+<h2>Step 1: the free stuff (2 minutes)</h2>
+<ul>
+<li>Scalability set to Cinematic? Screen percentage over 100?</li>
+<li>Running in an editor viewport rather than standalone?</li>
+<li>"Texture streaming pool over budget" warning? Unbuilt lighting?</li>
+<li>Turn off vsync / frame cap (<code>t.MaxFPS 0</code>) before trusting any numbers. A cap flatters the GPU time.</li>
+</ul>
+
+<h2>Step 2: <code>stat unit</code>: which thread?</h2>
+<div class="table-wrap"><table>
+<tr><th>Frame ≈</th><th>Bottleneck</th><th>Typical causes</th><th>Fix direction</th></tr>
+<tr><td><b>Game</b></td><td>Game thread</td><td>Blueprint Tick on hundreds of actors, heavy per-frame logic</td><td>Tick less (<a href="../unreal/tick-and-frame.html">Tick</a>), managers, move hot loops to C++</td></tr>
+<tr><td><b>Draw</b></td><td>Render thread, usually <b>draw calls</b></td><td>300 separate foliage actors; each shadow-casting light multiplying draws</td><td>Instancing (ISM/HISM/Nanite), merging, cull distances, fewer shadow casters</td></tr>
+<tr><td><b>GPU</b></td><td>GPU</td><td>Overdraw (translucency), shader cost, Lumen settings</td><td>Simpler materials, static switches, Lumen quality</td></tr>
+</table></div>
+<p><b>Foliage usually hits Draw before GPU.</b> Your mock answer gave three causes, all on the GPU. The question wanted three
+<i>bottlenecks</i>.</p>
+
+<h2>Step 3: narrow it</h2>
+<ul>
+<li>View modes: <b>Shader Complexity</b>, <b>Quad Overdraw</b>, <b>Light Complexity</b>, Lightmap Density.</li>
+<li><code>stat rhi</code> (draw calls, primitives), <code>stat game</code>, <code>stat scenerendering</code>.</li>
+<li><code>ProfileGPU</code> for per-pass GPU cost. <b>Unreal Insights</b> for a real trace across threads.</li>
+</ul>
+
+<h2>Corrections worth remembering</h2>
+<ul>
+<li><b>Masked isn't automatically cheaper than translucent.</b> Masked avoids blending and sorting but <b>breaks early-Z</b>,
+so dense masked foliage still pays heavy quad overdraw. It's usually still right for foliage; just say <i>why</i>.</li>
+<li><b>Lights:</b> point = 6 shadow faces vs spot = 1 is right. The bigger levers: is it <b>movable</b>, does it <b>cast
+shadows</b> at all, and how big is its <b>attenuation radius</b>. Turning off shadows on a decorative light is often the biggest one-minute win.</li>
+<li>Your static-switch point (a lerp that's only ever 0 or 1 should be a static switch parameter) is a real "I've optimised
+a material" answer. Keep it.</li>
+</ul>
+
+<div class="box say"><span class="label">40-second answer</span>
+<p>"First I check it isn't a settings problem: scalability, screen percentage, standalone vs editor. Then <code>stat
+unit</code> with the frame cap off, to see whether Game, Draw or GPU is the bottleneck, because the fixes are completely
+different. Game thread means Tick and Blueprints, Draw means draw calls and instancing, GPU means overdraw, shader cost
+or Lumen. Then I narrow it with view modes and <code>ProfileGPU</code> if it's the GPU. With 20 minutes I'd go for the
+biggest reversible win, usually shadow casting or cull distances, and log the rest for after the milestone."</p>
+</div>
+
+<div class="box yours"><span class="label">Do, don't just read</span>
+<p>Run <code>stat unit</code> on a real level (WadOfGore once it has enemies), screenshot it, and be able to say which
+thread is bound and how you'd confirm it.</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>What's the first command, and what four numbers does it give?</summary>
+<div class="a"><p><code>stat unit</code>: Frame, Game, Draw, GPU (plus RHIT and others in newer versions).</p></div></details>
+<details class="q"><summary>Frame ≈ Draw. What's the likely cause and fix?</summary>
+<div class="a"><p>Too many draw calls (many separate meshes, shadow-casting lights). Fix: instancing / merging / cull distances / fewer shadow casters.</p></div></details>
+<details class="q"><summary>Why turn off vsync before reading <code>stat unit</code>?</summary>
+<div class="a"><p>A frame cap pads the frame time, so the numbers don't show the real bottleneck.</p></div></details>
+<details class="q"><summary>Why can dense masked foliage still be expensive?</summary>
+<div class="a"><p>Masked materials break early-Z, so hidden pixels still get shaded. That's heavy quad overdraw.</p></div></details>
+<details class="q"><summary>Three light settings that matter more than point vs spot.</summary>
+<div class="a"><p>Mobility (movable?), cast shadows on/off, attenuation radius.</p></div></details>
+<details class="q"><summary>Name three optimisation view modes.</summary>
+<div class="a"><p>Shader Complexity, Quad Overdraw, Light Complexity (also Lightmap Density).</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hard vs Soft References · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Unreal internals</a></nav>
+<main>
+<h1>Hard vs soft references</h1>
+<p class="meta">Mock Q9 (Partial) · study plan 1.1: "the single most likely technical question for a Blueprint-heavy role" · 8 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>A <b>hard</b> reference loads the other asset <i>with</i> yours, and everything it hard-references, all the way down. A
+<b>soft</b> reference is just a path; nothing loads until you ask. <b>A <code>Cast To BP_Something</code> node is a hard
+reference.</b> That's how a small prop ends up dragging 400 MB into memory.</p>
+</div>
+
+<h2>Hard vs soft</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>Hard</th><th>Soft (<code>TSoftObjectPtr</code>, <code>TSoftClassPtr</code>, <code>FSoftObjectPath</code>)</th></tr>
+<tr><td>Stores</td><td>A pointer, recorded in the package's import table</td><td>A path string</td></tr>
+<tr><td>Loading mine loads it?</td><td><b>Yes</b>, synchronously and <b>transitively</b></td><td>No. Load on request (async via <code>FStreamableManager</code> / Asset Manager)</td></tr>
+<tr><td>Cost</td><td>Memory and load time</td><td>Latency. Code must handle "not loaded yet"</td></tr>
+<tr><td>Use for</td><td>Small things always needed with the owner</td><td>Big or optional things: meshes, textures, sounds, levels, UI, runtime picks</td></tr>
+</table></div>
+
+<h2>How one reference becomes 400 MB</h2>
+<ul>
+<li>The chain is transitive: mesh → material → textures. Worse: <b>Blueprint → Blueprint</b>. If a prop BP references or casts
+to a manager BP, it pulls in the manager and everything the manager references.</li>
+<li><b>Memorise: a <code>Cast To &lt;BP class&gt;</code> node creates a hard reference to that class.</b> So do variables typed as a BP
+class, and hard class defaults. It looks like nothing in the graph.</li>
+<li><b>Why the editor hides it:</b> the editor loads on demand with no memory budget. Everything is "already loaded", so the
+chain costs nothing. It shows up at cook/runtime as hitches, memory spikes and bloated paks.</li>
+</ul>
+
+<h2>Finding it</h2>
+<div class="table-wrap"><table>
+<tr><th>Tool</th><th>Shows</th></tr>
+<tr><td><b>Reference Viewer</b> (right-click asset)</td><td>What this pulls in, and what pulls it in</td></tr>
+<tr><td><b>Size Map</b></td><td>Total size <b>including dependencies</b>: "this prop is 400 MB"</td></tr>
+<tr><td><b>Asset Audit</b></td><td>Every asset sorted by total size</td></tr>
+<tr><td><code>memreport -full</code>, <code>obj list</code></td><td>What's actually resident in a running build</td></tr>
+<tr><td><b>A script</b> (the tools answer)</td><td>Walk every BP via the asset registry, sum dependencies, flag anything over a threshold. Run it in CI.</td></tr>
+</table></div>
+
+<h2>Fixing it</h2>
+<ul>
+<li>Soft references + async load for big or optional assets.</li>
+<li>Replace casts to heavy BPs with <b>interfaces</b> or <b>event dispatchers</b>. The caller no longer depends on the class.
+(WadOfGore's <code>IAbilitySystemInterface</code> is this idea in C++.)</li>
+<li>Shared data in <b>data assets</b> instead of manager BPs. Constants in function libraries or C++.</li>
+<li>C++ base classes: casting to a <b>C++ class</b> doesn't pull in any Blueprint's assets. That's one reason the course puts
+the character logic in C++ and only assets in the BP child.</li>
+</ul>
+
+<div class="box yours"><span class="label">Do, don't just read (study plan 1.1)</span>
+<p>Open Size Map on the heaviest Blueprint in Neon Echo (or <code>BP_HeroCharacter</code> in WadOfGore). Write down the
+number and what's in the chain. <b>That becomes an interview answer with a real number in it.</b></p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>What happens when you load an asset with a hard reference to another?</summary>
+<div class="a"><p>The referenced asset loads too, synchronously, and so does everything <i>it</i> hard-references, transitively.</p></div></details>
+<details class="q"><summary>Which innocent-looking Blueprint node creates a hard reference?</summary>
+<div class="a"><p><b>Cast To &lt;Blueprint class&gt;</b>. (Also variables typed as a BP class.)</p></div></details>
+<details class="q"><summary>Why doesn't reference bloat show up while working in the editor?</summary>
+<div class="a"><p>The editor has usually loaded everything already, with no memory budget or cook step, so the chain looks free.</p></div></details>
+<details class="q"><summary>Reference Viewer vs Size Map?</summary>
+<div class="a"><p>Reference Viewer: the graph of what references what. Size Map: total memory/disk including dependencies.</p></div></details>
+<details class="q"><summary>Two ways to talk to a manager BP without casting to it.</summary>
+<div class="a"><p>A Blueprint Interface, or an event dispatcher. (Or put the logic in a C++ base class / subsystem.)</p></div></details>
+<details class="q"><summary>Cost of switching to soft references?</summary>
+<div class="a"><p>Latency and complexity: you load on demand (ideally async) and must handle the not-yet-loaded / null case.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

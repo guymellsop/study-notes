@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custom Primitive Component · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Portfolio</a></nav>
+<main>
+<h1>Why a custom primitive component?</h1>
+<p class="meta">Mock Q4 · <b>Partial</b> · "Why not UProceduralMeshComponent / UDynamicMeshComponent?" · 7 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Cheap convex collision is why the <b>plugin</b> exists, but PMC can do convex collision too, so it's not why the
+<b>component</b> is custom. It's custom because <b>the shape tree is the source of truth</b>: one tree walk feeds
+rendering, collision and editor picking, and owning the body setup lets a moved node keep its cooked collision. Name the
+costs yourself before they do.</p>
+</div>
+
+<h2>What went wrong</h2>
+<ul>
+<li>"Cheaper-than-mesh collision" didn't survive "so why not PMC?". Keep the two questions apart: why the plugin
+vs why the component.</li>
+<li>"An entire environment as one primitive" invites culling/streaming pushback. Say "<b>one component per
+assembly</b>".</li>
+<li>The "costs" given were limitations of the shape model, not the costs of writing your own component and proxy.</li>
+</ul>
+
+<h2>Gains that need owning the component</h2>
+<ol>
+<li><b>Live edits without re-cooking.</b> A pure move doesn't change hull vertices, so the cooked hulls are kept and only
+transforms change, all installed in <b>one batched <code>SetGeometry</code></b>. Per-shape <code>SetLocalTransform</code> would
+be O(N²) because it rebuilds the union each call. It falls back to a full rebuild if count, mapping or vertices change.
+<b>Strongest single answer.</b></li>
+<li><b>One tree walk feeds everything</b> (<code>GenerateRenderData()</code> → proxy, collision, paint raycasts), so they
+can't drift apart.</li>
+<li><b>Per-node picking:</b> a hit proxy per shape, so a click resolves straight to the node. PMC's are per section.</li>
+<li><b>Stays parametric:</b> the component owns the tree, not vertices.</li>
+</ol>
+
+<h2>Costs (say these first)</h2>
+<ul>
+<li>Engine-version maintenance: <code>FPrimitiveSceneProxy</code> and Chaos internals aren't stable API.</li>
+<li><b>Dynamic draw path</b> (<code>GetDynamicMeshElements</code> every frame) vs static meshes' cached draw commands.</li>
+<li>No free Nanite, LODs, distance fields, HLOD/World Partition. The <b>bake to static mesh</b> is the mitigation.</li>
+<li>Granularity: one bounds box, so it's culled all-or-nothing and not streamable in pieces.</li>
+<li>Render-thread correctness is on you.</li>
+</ul>
+
+<div class="box say"><span class="label">45-second answer</span>
+<p>"Cheap convex collision is why the plugin exists, but PMC can do convex collision too, so that isn't why the component is
+custom. It's custom because the shape tree is the source of truth. One tree walk feeds rendering, collision and editor
+picking, and owning the body setup lets me move a node's collision without re-cooking: the hulls stay, and I install the
+new transforms in one batched geometry update. The costs are real: I maintain a scene proxy and some Chaos internals across
+engine versions, I use the dynamic draw path, and I don't get Nanite, LODs or streaming. That's why shipping content bakes to a
+static mesh."</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Why is "cheap collision" not a good answer to "why not PMC?"</summary>
+<div class="a"><p>PMC supports simple convex collision too (<code>AddCollisionConvexMesh</code>). Cheap collision justifies the plugin, not the custom component.</p></div></details>
+<details class="q"><summary>What's the fast path, and why is per-shape SetLocalTransform O(N²)?</summary>
+<div class="a"><p>On a pure move, keep the cooked hulls and swap transforms in one batched SetGeometry. SetLocalTransform rebuilds the whole union each call, so N calls × N shapes.</p></div></details>
+<details class="q"><summary>Static vs dynamic draw path: which does your proxy use, and what's the cost?</summary>
+<div class="a"><p>Dynamic (<code>GetDynamicMeshElements</code>): it gathers mesh batches every frame instead of using cached mesh draw commands. Fine for editing, costly at scale, which is why baking exists.</p></div></details>
+<details class="q"><summary>Name three costs of a custom component.</summary>
+<div class="a"><p>Engine-version maintenance, dynamic draw path, no Nanite/LOD/streaming, all-or-nothing culling, render-thread correctness (any three).</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

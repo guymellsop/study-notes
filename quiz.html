@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiz Me · Study</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="index.html">Study</a><span>/</span><span>Quiz</span></nav>
+<main>
+<h1>Quiz me</h1>
+<p class="meta">Five random questions from across every page. Answer in your head, then tap.</p>
+
+<p>
+  <label for="quiz-cat">From:</label>
+  <select id="quiz-cat">
+    <option value="all">Everything</option>
+    <option value="gow">God of War project</option>
+    <option value="cpp">C++</option>
+    <option value="unreal">Unreal internals</option>
+    <option value="perf">Performance</option>
+    <option value="portfolio">Portfolio</option>
+    <option value="behavioural">Interview answers</option>
+  </select>
+  <button class="btn" id="quiz-again" type="button">Another 5</button>
+</p>
+<p class="hint" id="quiz-status">Loading questions…</p>
+
+<section class="quiz"><div id="quiz-host"></div></section>
+</main>
+<script src="assets/site.js"></script>
+</body>
+</html>

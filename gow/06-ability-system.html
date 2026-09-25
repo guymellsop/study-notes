@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GAS Setup · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Gameplay Ability System setup</h1>
+<p class="meta">Commits <code>71fc60c</code>, <code>ebd87d3</code> · <code>AWarriorBaseCharacter</code>, <code>UWarriorAbilitySystemComponent</code>, <code>UWarriorAttributeSet</code> · 10 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>GAS is Epic's framework for "things characters can do and have done to them". The <b>Ability System
+Component</b> (ASC) is its hub on each character. It holds granted <b>abilities</b>, active <b>effects</b>, current
+<b>tags</b> and <b>attribute sets</b> (health, rage…). You've built the skeleton: the ASC and an empty attribute set
+on the base character, plus the interface GAS uses to find them.</p>
+</div>
+
+<h2>The vocabulary (learn these five)</h2>
+<div class="table-wrap"><table>
+<tr><th>Term</th><th>Is</th><th>God of War example</th></tr>
+<tr><td><b>Ability System Component</b></td><td>The hub component. Everything goes through it.</td><td>One on Kratos, one on each draugr</td></tr>
+<tr><td><b>Gameplay Ability</b></td><td>A thing you can <i>do</i>: activation rules, cost, cooldown, logic</td><td>Light attack, axe throw, spartan rage</td></tr>
+<tr><td><b>Gameplay Effect</b></td><td>A data-only rule that <i>changes</i> attributes or tags (instant, for a duration, or permanent)</td><td>Damage, a frost slow, rage building</td></tr>
+<tr><td><b>Attribute Set</b></td><td>The numbers: <code>FGameplayAttributeData</code> fields</td><td>Health, Rage, AttackPower</td></tr>
+<tr><td><b>Gameplay Tags</b></td><td>Current state, and the rules about it</td><td><code>Status.Blocking</code>; "can't attack while <code>Status.Stunned</code>"</td></tr>
+</table></div>
+<p>Why use it instead of hand-rolled health variables and <code>if (bIsAttacking)</code> flags? Abilities, cooldowns,
+buffs and "can't do X while Y" rules get complicated fast. GAS gives one consistent model for them (and networking, if
+you ever need it). The cost: it's big, and the setup is boilerplate-heavy. You've just written that boilerplate.</p>
+
+<h2>Your code</h2>
+<pre><code>class AWarriorBaseCharacter : public ACharacter, public IAbilitySystemInterface
+{
+    virtual UAbilitySystemComponent* GetAbilitySystemComponent() const;   // from the interface
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly) UWarriorAbilitySystemComponent* WarriorAbilitySystemComponent;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly) UWarriorAttributeSet* WarriorAttributeSet;
+};
+
+AWarriorBaseCharacter::AWarriorBaseCharacter() {
+    PrimaryActorTick.bCanEverTick = false;
+    GetMesh()-&gt;bReceivesDecals = false;
+    WarriorAbilitySystemComponent = CreateDefaultSubobject&lt;UWarriorAbilitySystemComponent&gt;(TEXT("..."));
+    WarriorAttributeSet = CreateDefaultSubobject&lt;UWarriorAttributeSet&gt;(TEXT("..."));
+}
+
+void AWarriorBaseCharacter::PossessedBy(AController* NewController) {
+    Super::PossessedBy(NewController);
+    if (WarriorAbilitySystemComponent) WarriorAbilitySystemComponent-&gt;InitAbilityActorInfo(this, this);
+}</code></pre>
+
+<h3><code>IAbilitySystemInterface</code></h3>
+<p>Multiple inheritance, but of an <b>interface</b> (the <code>I</code> prefix): a class with only a virtual function to
+implement. GAS code that has an arbitrary <code>AActor*</code> (say, whatever your axe just hit) asks "do you implement
+this interface? then give me your ASC", without casting to your character class. That's the same reason interfaces help with
+<a href="../unreal/asset-references.html">reference bloat</a>: the caller doesn't depend on your concrete class.</p>
+
+<h3>Owner vs avatar: <code>InitAbilityActorInfo(this, this)</code></h3>
+<div class="table-wrap"><table>
+<tr><th></th><th>Owner actor</th><th>Avatar actor</th></tr>
+<tr><td>Means</td><td>Who <b>owns</b> the ASC and its state</td><td>The <b>body</b> in the world: animations, location, collision</td></tr>
+<tr><td>Here</td><td>The character</td><td>The character</td></tr>
+<tr><td>In Lyra / multiplayer shooters</td><td>The <b>PlayerState</b></td><td>The pawn</td></tr>
+</table></div>
+<p>Putting the ASC on the PlayerState makes buffs and attributes <b>survive death and respawn</b> (a new pawn is spawned; the
+PlayerState stays). Single-player hack-and-slash where enemies just die? Putting it on the character is simpler and fine,
+and it's what the course does.</p>
+
+<h3>Why <code>PossessedBy</code>?</h3>
+<p>Actor info has to be set <i>after</i> the character exists and has a controller. <code>PossessedBy</code> runs when a
+controller takes over the pawn. Caveat: it only runs on the <b>server</b>. In a networked game, clients would also need to
+initialise, usually in <code>OnRep_PlayerState</code>. Single-player, it doesn't matter, but it's a classic GAS interview
+question.</p>
+
+<h3>The attribute set is empty, and how the ASC finds it</h3>
+<p>Created as a default subobject <i>of the same actor</i>, the ASC picks it up automatically when it initialises. Next
+you'll fill it with <code>FGameplayAttributeData Health</code> etc. and the <code>ATTRIBUTE_ACCESSORS</code> macro boilerplate.</p>
+
+<div class="box yours"><span class="label">Small things in your code worth a question each</span>
+<ul>
+<li><code>GetAbilitySystemComponent() const;</code> has no <b><code>override</code></b>. It compiles, but <code>override</code>
+makes the compiler check the signature really matches the base. Add it: it costs nothing and turns a silent
+mistake into an error.</li>
+<li><code>bCanEverTick = false</code> on the base character: good. Nothing in it needs per-frame work (see
+<a href="../unreal/tick-and-frame.html">Tick</a>).</li>
+<li><code>bReceivesDecals = false</code>: blood and scorch decals projected onto the world shouldn't paint the moving
+character.</li>
+<li>Raw pointers in <code>UPROPERTY</code> work. UE5 style is <code>TObjectPtr&lt;&gt;</code>. What keeps them alive is
+the <code>UPROPERTY</code>, not the pointer type (your mock Q3).</li>
+</ul>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Name what the ASC holds (four things).</summary>
+<div class="a"><p>Granted abilities, active gameplay effects, owned gameplay tags, attribute sets.</p></div></details>
+<details class="q"><summary>Gameplay Ability vs Gameplay Effect, in one sentence each.</summary>
+<div class="a"><p>An ability is something you <b>do</b> (with logic, activation rules, costs, cooldowns). An effect is a data rule that <b>changes</b> attributes or tags: instant, for a duration, or permanent.</p></div></details>
+<details class="q"><summary>Why implement <code>IAbilitySystemInterface</code>?</summary>
+<div class="a"><p>So any GAS code holding an <code>AActor*</code> can get its ASC without casting to your specific class.</p></div></details>
+<details class="q"><summary>Owner vs avatar actor? Why would a shooter put the ASC on the PlayerState?</summary>
+<div class="a"><p>Owner = owns the ASC's state; avatar = the physical body. On the PlayerState, attributes and effects survive the pawn dying and respawning.</p></div></details>
+<details class="q"><summary>Why is <code>InitAbilityActorInfo</code> in <code>PossessedBy</code>, and what's the multiplayer catch?</summary>
+<div class="a"><p>It needs the pawn to be possessed. <code>PossessedBy</code> is server-only, so networked clients must also init elsewhere (typically <code>OnRep_PlayerState</code>).</p></div></details>
+<details class="q"><summary>What does the missing <code>override</code> on <code>GetAbilitySystemComponent</code> risk?</summary>
+<div class="a"><p>Nothing today. But if the signature drifted (e.g. you dropped <code>const</code>), you'd be declaring a <i>new</i> function instead of overriding. Here the base is pure virtual, so you'd get a confusing "abstract class" error somewhere else. With an ordinary virtual base it's worse: it compiles, and the base version runs silently. <code>override</code> turns both into a clear error on that line.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

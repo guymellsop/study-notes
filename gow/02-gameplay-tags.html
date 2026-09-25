@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gameplay Tags · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Native gameplay tags</h1>
+<p class="meta">Course day 8 · <code>WarriorGameplayTags.h/.cpp</code> · 6 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>A gameplay tag is a <b>hierarchical name</b> like <code>InputTag.Move</code> that the engine registers once and
+compares cheaply. A <b>native</b> tag is declared in C++, so your code gets a <i>variable</i> for it. A typo is then
+a compile error instead of a silent bug at runtime. GAS uses tags for everything: input, states, cooldowns and
+immunities.</p>
+</div>
+
+<h2>The two macros</h2>
+<pre><code>// .h — "this tag exists somewhere" (like an extern variable)
+namespace WarriorGamePlayTags {
+    WADOFGORE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Move)
+}
+
+// .cpp — "here it is, and this is its name"
+namespace WarriorGamePlayTags {
+    UE_DEFINE_GAMEPLAY_TAG(InputTag_Move, "InputTag.Move")
+}</code></pre>
+<p>This is the normal C++ <b>declare in header, define in one .cpp</b> split. If you <i>defined</i> it in the header,
+every .cpp that included it would get its own copy and the linker would complain about duplicates.
+<code>WADOFGORE_API</code> exports the variable so other modules could use it too.</p>
+<p>The <b>namespace</b> just groups the names: you write <code>WarriorGamePlayTags::InputTag_Move</code>, and it can't
+clash with anything else called <code>InputTag_Move</code>.</p>
+
+<h2>Why native instead of the Project Settings list?</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>Native (C++ macro)</th><th>Ini / Project Settings</th></tr>
+<tr><td>How C++ gets it</td><td>A variable: <code>WarriorGamePlayTags::InputTag_Move</code></td><td><code>FGameplayTag::RequestGameplayTag("InputTag.Move")</code>, a string lookup</td></tr>
+<tr><td>Typo</td><td><b>Won't compile</b></td><td>Compiles. Fails (or asserts) at runtime</td></tr>
+<tr><td>Who adds them</td><td>Programmers</td><td>Designers, no recompile</td></tr>
+</table></div>
+<p>Rule of thumb: tags that <b>C++ code refers to</b> should be native. Tags that only designers use in data can live in
+the ini. Both end up in the same tag tree in the editor.</p>
+
+<h2>Why tags instead of enums or names?</h2>
+<ul>
+<li><b>Hierarchy.</b> <code>State.Debuff.Stun</code> "matches" <code>State.Debuff</code>. You can ask "is he debuffed
+at all?" without listing every debuff. <code>MatchesTag</code> honours parents; <code>MatchesTagExact</code> doesn't.</li>
+<li><b>Cheap.</b> Registered once; comparing two tags doesn't compare strings.</li>
+<li><b>Editor-friendly.</b> A nice picker, and <code>meta = (Categories = "InputTag")</code> filters it to one branch.
+Your input data asset uses exactly that.</li>
+<li><b>No central enum</b> that every system must edit (and recompile) to add a value.</li>
+<li><b>Containers.</b> <code>FGameplayTagContainer</code> holds a set of tags, with <code>HasTag</code>,
+<code>HasAny</code>, <code>HasAll</code>. GAS gives every actor one: "what am I right now".</li>
+</ul>
+
+<h2>Where it's going</h2>
+<p>Right now there are two tags, <code>InputTag.Move</code> and <code>InputTag.Look</code>, used to find input actions.
+Expect many more: ability input tags (<code>InputTag.LightAttack</code>), ability tags, and <b>status</b> tags like
+"is blocking" or "is dead" that abilities check before they're allowed to activate.</p>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Why does <code>UE_DEFINE_GAMEPLAY_TAG</code> go in the .cpp, not the header?</summary>
+<div class="a"><p>It <i>defines</i> a variable. In a header, every .cpp that included it would define its own copy, which gives a duplicate-symbol link error. The header gets the <code>DECLARE_..._EXTERN</code> ("it exists somewhere"); one .cpp gets the definition.</p></div></details>
+<details class="q"><summary>Main advantage of a native tag over <code>RequestGameplayTag("InputTag.Move")</code>?</summary>
+<div class="a"><p>A misspelled native tag fails to <b>compile</b>. A misspelled string compiles fine and fails at runtime.</p></div></details>
+<details class="q"><summary>A unit has <code>State.Debuff.Stun</code>. Does <code>MatchesTag(State.Debuff)</code> return true? <code>MatchesTagExact</code>?</summary>
+<div class="a"><p><code>MatchesTag</code>: <b>true</b>, because parents match. <code>MatchesTagExact</code>: <b>false</b>.</p></div></details>
+<details class="q"><summary>What does <code>meta = (Categories = "InputTag")</code> on an <code>FGameplayTag</code> property do?</summary>
+<div class="a"><p>It filters the editor's tag picker to the <code>InputTag</code> branch, so designers can't pick an unrelated tag.</p></div></details>
+<details class="q"><summary>Interview-style: why would a studio prefer gameplay tags over a big <code>EPlayerState</code> enum?</summary>
+<div class="a"><p>States combine (stunned <i>and</i> burning); a container holds many tags, while an enum holds one value. Tags are hierarchical, so you can query a whole family. And adding one doesn't mean editing a central enum that every system depends on.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

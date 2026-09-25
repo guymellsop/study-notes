@@ -1,0 +1,174 @@
+/* Study notes: one stylesheet for every page. Colours are tokens so dark mode is a swap. */
+:root {
+  --bg: #f7f5f0;
+  --surface: #ffffff;
+  --text: #1f1d1a;
+  --muted: #6b665e;
+  --line: #e2ddd3;
+  --accent: #b3401c;       /* God of War red-orange */
+  --accent-soft: #fbe9e2;
+  --ok: #2f7d4f;
+  --ok-soft: #e3f3e9;
+  --warn: #8a5a00;
+  --warn-soft: #fff3d6;
+  --code-bg: #f0ece4;
+  --radius: 10px;
+  --on-accent: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15140f;
+    --surface: #1f1d18;
+    --text: #ece8df;
+    --muted: #a39d92;
+    --line: #34312a;
+    --accent: #ff8a5c;
+    --accent-soft: #3a2118;
+    --ok: #6fcf97;
+    --ok-soft: #1b3326;
+    --warn: #f2c14e;
+    --warn-soft: #362b12;
+    --code-bg: #29261f;
+    --on-accent: #1a0f0a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15140f; --surface: #1f1d18; --text: #ece8df; --muted: #a39d92; --line: #34312a;
+  --accent: #ff8a5c; --accent-soft: #3a2118; --ok: #6fcf97; --ok-soft: #1b3326;
+  --warn: #f2c14e; --warn-soft: #362b12; --code-bg: #29261f; --on-accent: #1a0f0a;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 44rem; margin: 0 auto; padding: 1rem 16px 4rem; }
+
+/* Top bar: breadcrumb back to home and the category */
+.top {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;
+  padding: .6rem 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  font-size: .9rem;
+}
+.top a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.top span { color: var(--muted); }
+
+h1 { font-size: 1.7rem; line-height: 1.25; margin: 1rem 0 .25rem; }
+h2 { font-size: 1.25rem; margin: 2rem 0 .5rem; padding-top: .5rem; border-top: 1px solid var(--line); }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .4rem; }
+.meta { color: var(--muted); font-size: .9rem; margin: 0 0 1rem; }
+a { color: var(--accent); }
+ul, ol { padding-left: 1.3rem; }
+li { margin: .25rem 0; }
+
+code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: .88em;
+  background: var(--code-bg);
+  padding: .08em .3em;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code-bg);
+  padding: .8rem;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  font-size: .85rem;
+  line-height: 1.45;
+}
+pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+
+/* Tables scroll sideways on a phone instead of breaking the page */
+.table-wrap { overflow-x: auto; margin: .8rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { border: 1px solid var(--line); padding: .45rem .55rem; text-align: left; vertical-align: top; }
+th { background: var(--surface); }
+
+/* Callout boxes */
+.box { border-radius: var(--radius); padding: .8rem 1rem; margin: 1rem 0; border-left: 4px solid; }
+.box > :first-child { margin-top: 0; }
+.box > :last-child { margin-bottom: 0; }
+.box .label { display: block; font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin-bottom: .3rem; }
+.tldr { background: var(--accent-soft); border-color: var(--accent); }
+.tldr .label { color: var(--accent); }
+.say { background: var(--ok-soft); border-color: var(--ok); }
+.say .label { color: var(--ok); }
+.warn { background: var(--warn-soft); border-color: var(--warn); }
+.warn .label { color: var(--warn); }
+.yours { background: var(--surface); border-color: var(--muted); border: 1px solid var(--line); border-left: 4px solid var(--muted); }
+.yours .label { color: var(--muted); }
+
+/* Quiz: tap a question to reveal the answer */
+.quiz h2 { color: var(--accent); }
+details.q {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin: .6rem 0;
+}
+details.q > summary {
+  cursor: pointer;
+  padding: .75rem 1rem;
+  font-weight: 600;
+  list-style: none;
+}
+details.q > summary::-webkit-details-marker { display: none; }
+details.q > summary::before { content: "Q "; color: var(--accent); font-weight: 800; }
+details.q[open] > summary { border-bottom: 1px dashed var(--line); }
+details.q .a { padding: .6rem 1rem .8rem; }
+details.q .a > :first-child { margin-top: 0; }
+details.q .a > :last-child { margin-bottom: 0; }
+.hint { color: var(--muted); font-size: .85rem; }
+
+/* Cards on the home page and category pages */
+.cards { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); margin: 1rem 0; }
+.card {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .9rem 1rem;
+  text-decoration: none;
+  color: var(--text);
+}
+.card:hover { border-color: var(--accent); }
+.card strong { display: block; font-size: 1.05rem; color: var(--accent); }
+.card small { color: var(--muted); display: block; margin-top: .2rem; }
+.card .progress { margin-top: .5rem; font-size: .8rem; color: var(--ok); font-weight: 600; }
+
+.topic-list { list-style: none; padding: 0; }
+.topic-list li { margin: .5rem 0; }
+.topic-list a {
+  display: flex; gap: .6rem; align-items: baseline;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .7rem .9rem;
+  text-decoration: none;
+  color: var(--text);
+}
+.topic-list a::before { content: "○"; color: var(--muted); }
+.topic-list a.learned::before { content: "✓"; color: var(--ok); font-weight: 800; }
+.topic-list .sub { display: block; color: var(--muted); font-size: .85rem; }
+
+/* Buttons */
+.btn {
+  display: inline-block;
+  font: inherit; font-weight: 600;
+  background: var(--accent); color: var(--on-accent);
+  border: 0; border-radius: var(--radius);
+  padding: .6rem 1rem;
+  cursor: pointer; text-decoration: none;
+}
+.btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.btn.done { background: var(--ok); color: var(--on-accent); }
+.page-end { display: flex; flex-wrap: wrap; gap: .6rem; justify-content: space-between; align-items: center; margin-top: 2.5rem; }
+.pager { display: flex; gap: .6rem; flex-wrap: wrap; }

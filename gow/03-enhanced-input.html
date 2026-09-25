@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data-Driven Input · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Data-driven Enhanced Input</h1>
+<p class="meta">Course days 9–10 (input config) · <code>DataAsset_InputConfig</code>, <code>WarriorInputComponent</code>, <code>WarriorHeroCharacter::SetupPlayerInputComponent</code> · 10 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Instead of the character holding a variable per input action, a <b>data asset</b> holds a list of
+"<i>tag → input action</i>" pairs. The character says "bind <code>InputTag.Move</code> to <code>Input_Move</code>".
+A custom <b>input component</b> looks the tag up in the data asset and does the normal binding. That keeps the code
+the same when the input actions change, and sets up binding <i>abilities</i> by tag later.</p>
+</div>
+
+<h2>The Enhanced Input pieces</h2>
+<div class="table-wrap"><table>
+<tr><th>Asset / class</th><th>What it is</th></tr>
+<tr><td><b>Input Action</b> (<code>IA_Move</code>)</td><td>An abstract action ("move") and its value type (<code>Vector2D</code>). It knows nothing about keys.</td></tr>
+<tr><td><b>Input Mapping Context</b> (<code>IMC_Default</code>)</td><td>The keys → actions table (WASD → IA_Move), plus modifiers (negate, swizzle) and triggers.</td></tr>
+<tr><td><code>UEnhancedInputLocalPlayerSubsystem</code></td><td>Per-player. You <b>add mapping contexts</b> to it with a priority. Swapping contexts is how you'd do "on foot" vs "menu" controls.</td></tr>
+<tr><td><code>UEnhancedInputComponent</code></td><td>Where you <b>bind</b> an action + trigger event to a function.</td></tr>
+</table></div>
+
+<h2>Walkthrough of your code</h2>
+<h3>1. The data asset</h3>
+<pre><code>USTRUCT(BlueprintType)
+struct FWarriorInputActionConfig {
+    UPROPERTY(EditDefaultsOnly, meta = (Categories = "InputTag"))
+    FGameplayTag InputTag;
+    UPROPERTY(EditDefaultsOnly)
+    UInputAction* InputAction = nullptr;
+};
+
+UCLASS()
+class UDataAsset_InputConfig : public UDataAsset {
+    UPROPERTY(EditDefaultsOnly) UInputMappingContext* DefaultInputMappingContext;
+    UPROPERTY(EditDefaultsOnly, meta = (TitleProperty = "InputTag"))
+    TArray&lt;FWarriorInputActionConfig&gt; NativeInputActions;
+    UInputAction* FindNativeInputActionByTag(const FGameplayTag&amp; InInputTag) const;
+};</code></pre>
+<ul>
+<li><b><code>UDataAsset</code></b>: a UObject whose only job is to hold data you edit in the Content Browser. There's no
+actor or level involved. Several characters can share one.</li>
+<li><b><code>TitleProperty</code></b> shows each array element by its tag in the Details panel instead of "Index [0]".</li>
+<li><b><code>FindNativeInputActionByTag</code></b> is a plain linear search. It only runs at setup, over a handful of entries, so a
+<code>TMap</code> would be over-engineering.</li>
+</ul>
+
+<h3>2. The custom input component and the template</h3>
+<pre><code>template&lt;class UserObject, typename CallBackFunc&gt;
+void BindNativeInputAction(const UDataAsset_InputConfig* InInputConfig,
+                           const FGameplayTag&amp; InInputTag, ETriggerEvent TriggerEvent,
+                           UserObject* ContextObject, CallBackFunc Func)
+{
+    checkf(InInputConfig, TEXT("Input Config data asset is null..."));
+    if (UInputAction* FoundAction = InInputConfig-&gt;FindNativeInputActionByTag(InInputTag))
+        BindAction(FoundAction, TriggerEvent, ContextObject, Func);
+}</code></pre>
+<p><b>Why a template?</b> <code>BindAction</code> must work for <i>any</i> class and <i>any</i> member function. A
+template says "I'll fill in these types when you call me". The compiler works them out from the arguments:
+<code>UserObject</code> = <code>AWarriorHeroCharacter</code>, <code>CallBackFunc</code> =
+<code>void (AWarriorHeroCharacter::*)(const FInputActionValue&amp;)</code> (a pointer to a member function). You
+never type those out.</p>
+<p><b>Why is its body in the header?</b> A template isn't compiled until it's used. The .cpp that <i>calls</i> it needs
+the whole body visible to generate the real function. If you put the body in a .cpp, you get linker errors.</p>
+<p><b><code>if (X* Found = ...)</code></b> declares and tests in one line. <code>Found</code> only exists inside
+the if.</p>
+
+<h3>3. The character wires it up</h3>
+<pre><code>checkf(InputConfigDataAsset, TEXT("Forgot to assign..."));
+Subsystem-&gt;AddMappingContext(InputConfigDataAsset-&gt;DefaultInputMappingContext, 0);
+UWarriorInputComponent* WarriorInputComponent = CastChecked&lt;UWarriorInputComponent&gt;(PlayerInputComponent);
+WarriorInputComponent-&gt;BindNativeInputAction(InputConfigDataAsset, WarriorGamePlayTags::InputTag_Move,
+    ETriggerEvent::Triggered, this, &amp;ThisClass::Input_Move);</code></pre>
+<ul>
+<li><b><code>&amp;ThisClass::Input_Move</code></b>: <code>ThisClass</code> is a typedef that <code>GENERATED_BODY()</code>
+gives you, equal to <code>AWarriorHeroCharacter</code>. <code>&amp;Class::Func</code> is a pointer to a member function.</li>
+<li><b><code>ETriggerEvent::Triggered</code></b> fires <i>every frame</i> while the input is held (for the default trigger).
+That's what you want for movement. For a button press you'd usually want <code>Started</code>.</li>
+<li><b><code>CastChecked</code></b> crashes (in dev builds) if the cast fails, instead of returning null. It's used when a failure
+means the project is set up wrong, not something to handle at runtime.</li>
+</ul>
+
+<div class="box warn"><span class="label">The hidden setting that makes it work</span>
+<p>Why is the <code>PlayerInputComponent</code> Unreal hands you a <code>UWarriorInputComponent</code> at all? Because
+<code>Config/DefaultInput.ini</code> has
+<code>DefaultInputComponentClass=/Script/WadOfGore.WarriorInputComponent</code> (Project Settings → Input →
+Default Classes). If that ever gets reset, <code>CastChecked</code> crashes at startup. Remember this when you set up
+a new project.</p>
+</div>
+
+<h2>Why bother with the indirection?</h2>
+<ul>
+<li>Designers can swap actions and mappings in a data asset without touching C++.</li>
+<li>The same pattern will bind <b>abilities</b> by tag: "whatever ability is tagged <code>InputTag.LightAttack</code>,
+activate it on press". The character never needs to know which abilities exist.</li>
+<li>It's the pattern Epic uses in <b>Lyra</b> (<code>ULyraInputConfig</code>), so it's worth being able to talk about.</li>
+</ul>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>What's the difference between an Input Action and an Input Mapping Context?</summary>
+<div class="a"><p>The action is <i>what</i> (move, with a Vector2D value). The mapping context is <i>which keys</i> produce it, with modifiers/triggers. Contexts get added to the local player subsystem with a priority.</p></div></details>
+<details class="q"><summary>Why must <code>BindNativeInputAction</code>'s body be in the header?</summary>
+<div class="a"><p>It's a template. The compiler generates the real function where it's called, so the full body must be visible there. Put it in a .cpp and you get unresolved externals.</p></div></details>
+<details class="q"><summary>What does <code>&amp;ThisClass::Input_Move</code> evaluate to, and where does <code>ThisClass</code> come from?</summary>
+<div class="a"><p>A pointer to the member function <code>AWarriorHeroCharacter::Input_Move</code>. <code>ThisClass</code> is a typedef added by <code>GENERATED_BODY()</code>.</p></div></details>
+<details class="q"><summary>The game crashes on <code>CastChecked&lt;UWarriorInputComponent&gt;</code> in a fresh project. What did you forget?</summary>
+<div class="a"><p>Setting <b>Default Input Component Class</b> to <code>WarriorInputComponent</code> (Project Settings → Input, saved in <code>DefaultInput.ini</code>).</p></div></details>
+<details class="q"><summary>Triggered vs Started: which for movement, which for an attack press?</summary>
+<div class="a"><p>Movement: <b>Triggered</b> (every frame while held). A single press action: usually <b>Started</b> (once, on press).</p></div></details>
+<details class="q"><summary>Why a linear search in <code>FindNativeInputActionByTag</code> instead of a TMap?</summary>
+<div class="a"><p>It runs once at setup over a handful of entries. A map adds complexity (and doesn't show nicely in the editor) for no measurable gain.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

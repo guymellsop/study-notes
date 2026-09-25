@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Includes and Unity Builds · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">C++</a></nav>
+<main>
+<h1>Includes, unity builds, PCH, IWYU</h1>
+<p class="meta">Mock Q1 · result: <b>Partial</b> (knew transitive includes, not unity/PCH) · 6 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>A file can use a header it never included, because <b>unity builds</b> glue many .cpp files together and <b>shared
+precompiled headers</b> pre-include common stuff. When the grouping changes, the file loses the include it was
+borrowing and breaks. Prevent it with <b>IWYU</b> (include what you use) and a <b>non-unity build</b> on CI.</p>
+</div>
+
+<h2>The question</h2>
+<p>A .cpp uses <code>FMath::Clamp</code> without including its header and compiles fine. Two weeks later an unrelated
+change (adding a new .cpp to the module) makes it fail. Why did it compile, why did it break, and how do you prevent it?</p>
+
+<h2>Three ways to see a header you didn't include</h2>
+<ol>
+<li><b>Transitive includes.</b> A header you include includes it.</li>
+<li><b>Precompiled headers.</b> <code>PCHUsage = UseExplicitOrSharedPCHs</code> (it's in WadOfGore's Build.cs too) lets a
+module compile against a <i>shared</i> PCH that already contains <code>CoreMinimal.h</code> and friends.</li>
+<li><b>Unity builds.</b> UBT concatenates many .cpp files into one generated file that <code>#include</code>s them in turn.
+A header included by an <i>earlier</i> .cpp in the same group is visible to every <i>later</i> one. Your file borrows its
+neighbour's include.</li>
+</ol>
+
+<h2>Why an unrelated change breaks it</h2>
+<ul>
+<li>UBT groups files by size and order. Adding or removing a file shifts the boundaries, so you lose the neighbour you were
+borrowing from.</li>
+<li><b>Adaptive unity:</b> files you're actively editing (modified in git) get pulled <i>out</i> of the unity blob to
+compile faster. So "I touched this file and now it won't compile" is the classic symptom.</li>
+<li>Same mechanism: "builds on my machine, fails on CI".</li>
+</ul>
+
+<h2>Prevention</h2>
+<ul>
+<li><b>IWYU</b>: every file includes headers for what it uses directly. Epic's convention since UE 4.15;
+<code>IWYUSupport = IWYUSupport.Full</code> in Build.cs (5.2+).</li>
+<li>A periodic/CI <b>non-unity build</b>: <code>-DisableUnity -NoPCH -NoSharedPCH</code>, or <code>bUseUnity = false</code>.
+It surfaces every hidden dependency at once.</li>
+<li><b>Forward-declare in headers</b>, include in the .cpp. That means fewer transitive includes and faster builds (WadOfGore does this:
+<code>class USpringArmComponent;</code>).</li>
+</ul>
+
+<div class="box say"><span class="label">30-second answer</span>
+<p>"Unity builds and shared PCHs hide missing includes. Unity grouping changes when files are added, or when adaptive
+unity pulls out a file you're editing, so the error shows up later. I follow IWYU and run a non-unity build on CI to
+catch it."</p>
+</div>
+
+<div class="box yours"><span class="label">Do, don't just read</span>
+<p>Build a project once with <code>-DisableUnity -NoPCH -NoSharedPCH</code> and fix whatever breaks. That gives you real
+findings to talk about.</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>What is a unity build?</summary>
+<div class="a"><p>UBT combines many .cpp files into one generated file that includes them in turn, so the compiler parses shared headers once. That makes builds much faster.</p></div></details>
+<details class="q"><summary>What is adaptive unity, and why does it cause "I edited it and now it won't compile"?</summary>
+<div class="a"><p>Files you're working on get compiled on their own, outside the blob. They lose the headers they were borrowing from neighbours.</p></div></details>
+<details class="q"><summary>What does IWYU stand for, and what's the rule?</summary>
+<div class="a"><p>Include What You Use: every file includes the headers for the things it uses directly, instead of relying on something else to pull them in.</p></div></details>
+<details class="q"><summary>Which build flags surface every hidden include problem?</summary>
+<div class="a"><p><code>-DisableUnity -NoPCH -NoSharedPCH</code> (or <code>bUseUnity = false</code> in Build.cs).</p></div></details>
+<details class="q"><summary>Why forward-declare in headers?</summary>
+<div class="a"><p>Fewer includes leak into everyone who includes your header. That gives faster compiles and fewer accidental dependencies.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

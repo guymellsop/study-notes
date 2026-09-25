@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Abilities and Weapons · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Activation policy and the weapon</h1>
+<p class="meta">Course day 12 (ability policy, weapon setup) · commit <code>17f78d1</code> · <code>UWarriorGameplayAbility</code>, <code>AWarriorWeaponBase</code>, <code>GA_Shared_SpawnWeapon</code>, <code>GA_Hero_SpawnAxe</code> · 9 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>All your abilities derive from one base class that adds an <b>activation policy</b>. <code>OnTriggered</code>
+abilities wait for input or an event. <code>OnGiven</code> abilities <b>run as soon as they're granted, then remove
+themselves</b>. That's a neat way to run one-off setup through GAS, like "spawn the axe and put it on his back".</p>
+</div>
+
+<h2>The policy</h2>
+<pre><code>UENUM(BlueprintType)
+enum class EWarriorAbilityActivationPolicy : uint8 { OnTriggered, OnGiven };
+
+void UWarriorGameplayAbility::OnGiveAbility(const FGameplayAbilityActorInfo* ActorInfo,
+                                            const FGameplayAbilitySpec&amp; Spec) {
+    Super::OnGiveAbility(ActorInfo, Spec);
+    if (AbilityActivationPolicy == EWarriorAbilityActivationPolicy::OnGiven)
+        if (ActorInfo &amp;&amp; !Spec.IsActive())
+            ActorInfo-&gt;AbilitySystemComponent-&gt;TryActivateAbility(Spec.Handle);
+}
+
+void UWarriorGameplayAbility::EndAbility(...) {
+    Super::EndAbility(...);
+    if (AbilityActivationPolicy == EWarriorAbilityActivationPolicy::OnGiven)
+        if (ActorInfo) ActorInfo-&gt;AbilitySystemComponent-&gt;ClearAbility(Handle);
+}</code></pre>
+<ul>
+<li><b><code>enum class ... : uint8</code></b>: a <i>scoped</i> enum (you must write <code>EWarriorAbilityActivationPolicy::OnGiven</code>,
+and it doesn't silently convert to int). <code>uint8</code> is required for <code>UENUM(BlueprintType)</code>.</li>
+<li><b>Spec and Handle.</b> Granting an ability creates an <code>FGameplayAbilitySpec</code>: "this ability, at this
+level, on this ASC". The <code>Handle</code> is its ID. You activate and clear <i>specs by handle</i>, not ability classes.</li>
+<li><b><code>OnGiveAbility</code></b> is a GAS hook that runs when the spec is granted. Checking <code>!Spec.IsActive()</code>
+avoids activating twice.</li>
+<li><b><code>EndAbility</code> → <code>ClearAbility</code></b>: once a one-shot ability finishes, it's removed from the ASC.
+It did its job, so it shouldn't stay granted.</li>
+<li><b>Always call <code>Super::</code> first</b> in these overrides. GAS does real bookkeeping in the base versions.</li>
+</ul>
+
+<h2>Why spawn a weapon through an ability?</h2>
+<ul>
+<li>It's consistent: <i>everything</i> the character does goes through the ASC, including setup.</li>
+<li>Enemies can reuse it. <code>GA_Shared_SpawnWeapon</code> is the shared Blueprint; <code>GA_Hero_SpawnAxe</code> is the
+hero's version that picks <code>BP_HeroAxe</code>. Same logic, different data.</li>
+<li>Later, abilities are granted from a list (a start-up data asset is the usual next step), so "which weapon does this
+character start with" becomes data, not code.</li>
+</ul>
+
+<h2>The weapon actor</h2>
+<pre><code>AWarriorWeaponBase::AWarriorWeaponBase() {
+    PrimaryActorTick.bCanEverTick = true;               // ← see below
+    WeaponMesh = CreateDefaultSubobject&lt;UStaticMeshComponent&gt;(TEXT("WeaponMesh"));
+    SetRootComponent(WeaponMesh);
+    WeaponCollisionBox = CreateDefaultSubobject&lt;UBoxComponent&gt;(TEXT("WeaponsCollisionBox"));
+    WeaponCollisionBox-&gt;SetupAttachment(GetRootComponent());
+    WeaponCollisionBox-&gt;SetBoxExtent(FVector(20.f));
+    WeaponCollisionBox-&gt;SetCollisionEnabled(ECollisionEnabled::NoCollision);
+}</code></pre>
+<ul>
+<li><b>Collision starts off.</b> The axe mustn't hit anything while it's on his back or mid-idle. The usual next step is
+to switch it on only during the swing's "active frames", from an <b>anim notify state</b> in the attack montage, and
+off again after. A hit in that window = damage.</li>
+<li><b>A separate box, not the mesh's collision.</b> You tune the hit area for game feel, independent of the art.</li>
+<li><b><code>FORCEINLINE GetWeaponCollisionBox()</code></b>: a getter, so other classes read it but can't reassign it.</li>
+<li><b>Base → hero subclass</b> (<code>AWarriorHeroWeapon</code>) is the same idea as the characters: shared parent, hero
+specifics later (e.g. the hero's weapon anim layer and input).</li>
+</ul>
+
+<div class="box warn"><span class="label">Spot it</span>
+<p><code>AWarriorWeaponBase</code> has <code>bCanEverTick = true</code> but no <code>Tick</code> function. That's
+template boilerplate. Every spawned weapon registers a tick that does nothing. Set it to <code>false</code>, as the base
+character already does. It's a small thing, but it's exactly the point your mock Q5/Q6 answers were about.</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>OnTriggered vs OnGiven: what's the difference in behaviour?</summary>
+<div class="a"><p>OnTriggered waits for something (input, an event) to activate it. OnGiven activates itself the moment it's granted and, in this project, clears itself from the ASC when it ends.</p></div></details>
+<details class="q"><summary>What is an <code>FGameplayAbilitySpec</code>, and what's its handle for?</summary>
+<div class="a"><p>A granted instance of an ability on an ASC (class, level, input and so on). The handle is its ID, used to activate, cancel or clear that specific grant.</p></div></details>
+<details class="q"><summary>Why clear an OnGiven ability in <code>EndAbility</code>?</summary>
+<div class="a"><p>It's a one-shot (spawn the weapon). Leaving it granted is clutter, and it could be activated again by accident.</p></div></details>
+<details class="q"><summary>Why does the weapon's collision box start at <code>NoCollision</code>?</summary>
+<div class="a"><p>It should only register hits during the attack's active frames. It gets toggled on and off from the attack animation (anim notify state), so carrying or idling doesn't deal damage.</p></div></details>
+<details class="q"><summary>Why must a <code>UENUM(BlueprintType)</code> be <code>: uint8</code>?</summary>
+<div class="a"><p>Blueprint only supports byte-sized enums.</p></div></details>
+<details class="q"><summary>What's wasteful in <code>AWarriorWeaponBase</code>'s constructor?</summary>
+<div class="a"><p><code>bCanEverTick = true</code> with no Tick. Each weapon registers an empty tick function every frame. Set it false.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>
