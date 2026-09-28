@@ -31,7 +31,6 @@ const TOPICS = [
   // Interview answers
   { cat: "behavioural", url: "behavioural/senior-disagrees.html", title: "A senior overrules you / a time you were wrong" },
   { cat: "behavioural", url: "behavioural/prioritising.html", title: "Six people, six tools, one month" },
-  { cat: "behavioural", url: "behavioural/why-you.html", title: "Why you? Why leave your job?" },
 ];
 
 const CATEGORIES = {
