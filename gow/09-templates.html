@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Templates and T* · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Templates and <code>T*</code></h1>
+<p class="meta">Teacher's assignment: "explain T*" · <code>GetOwningPawn&lt;T&gt;()</code> · 7 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p><code>T</code> is a <b>placeholder type</b> the caller fills in, like a <b>wildcard pin</b> in Blueprint that takes on
+the type of whatever you connect. <code>T*</code> is "a pointer to whatever <code>T</code> turns out to be". The compiler
+writes a separate copy of the function for each type you use it with.</p>
+</div>
+
+<h2>The code</h2>
+<pre><code>template &lt;class T&gt;                    // "T is some class, named by the caller"
+T* GetOwningPawn() const              // returns a pointer to a T
+{
+    return CastChecked&lt;T&gt;(GetOwner()); // cast my owner to a T
+}</code></pre>
+<p>Calling it:</p>
+<pre><code>AWarriorHeroCharacter* Hero = GetOwningPawn&lt;AWarriorHeroCharacter&gt;();
+APawn* AnyPawn             = GetOwningPawn&lt;APawn&gt;();</code></pre>
+<p>For the first call the compiler writes a version with every <code>T</code> replaced by
+<code>AWarriorHeroCharacter</code>: it returns an <code>AWarriorHeroCharacter*</code> and uses
+<code>CastChecked&lt;AWarriorHeroCharacter&gt;</code>. You write it once and it works for any type.</p>
+
+<h2>The Blueprint wildcard analogy</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>Blueprint wildcard pin</th><th>C++ template <code>T</code></th></tr>
+<tr><td>Before it's used</td><td>Grey pin, no type yet</td><td><code>T</code>, no type yet</td></tr>
+<tr><td>What sets the type</td><td>The wire you connect</td><td>What you write in <code>&lt;&gt;</code> (or what the compiler infers from the arguments)</td></tr>
+<tr><td>When it's decided</td><td>When you compile the Blueprint</td><td>At <b>compile time</b>, not while the game runs</td></tr>
+<tr><td>Wrong type</td><td>The wire won't connect</td><td>A compile error</td></tr>
+<tr><td>Examples</td><td>Array nodes, <i>Select</i>, <i>Make Array</i></td><td><code>TArray&lt;T&gt;</code>, <code>Cast&lt;T&gt;</code>, <code>GetOwningPawn&lt;T&gt;</code></td></tr>
+</table></div>
+<p><b>Where the analogy stops:</b> a template produces a <b>separate compiled copy for each type</b> you use it with
+(that's called <i>instantiation</i>). Also, <code>T</code> alone is the wildcard, and the <code>*</code> is a separate
+thing: "pointer to". <code>T</code> could just as well be used as <code>T&amp;</code> or <code>TArray&lt;T&gt;</code>.</p>
+
+<h2>Why write it as a template?</h2>
+<p>Without one, the function would return <code>APawn*</code>, and every caller would cast the result themselves:</p>
+<pre><code>// without a template: casting at every call site
+AWarriorHeroCharacter* Hero = Cast&lt;AWarriorHeroCharacter&gt;(GetOwningPawn());
+
+// with the template: one call, exact type back
+AWarriorHeroCharacter* Hero = GetOwningPawn&lt;AWarriorHeroCharacter&gt;();</code></pre>
+
+<h2>Why it gets confused with <code>TObjectPtr</code></h2>
+<p>Unreal names its template <b>classes</b> with a <code>T</code> prefix: <code>TArray&lt;&gt;</code>,
+<code>TObjectPtr&lt;&gt;</code>, <code>TMap&lt;&gt;</code>, <code>TSubclassOf&lt;&gt;</code>. They're templates too,
+which is why they take angle brackets. But the lone <code>T</code> in <code>template &lt;class T&gt;</code> is just a
+<b>parameter name</b>. It could be called anything, and the convention is a single letter. You've already seen a longer
+one: <code>template&lt;class UserObject, typename CallBackFunc&gt;</code> in
+<a href="03-enhanced-input.html">the input lesson</a>.</p>
+<p><code>class</code> and <code>typename</code> mean exactly the same thing inside <code>template &lt; &gt;</code>.</p>
+
+<h2>The rest of the line</h2>
+<ul>
+<li><b><code>const</code></b> after the brackets: calling it doesn't change the component.</li>
+<li><b><code>CastChecked</code></b>: crashes on purpose (in development builds) if the owner isn't a <code>T</code>. Asking
+for the wrong type is a setup bug, so you want it loud.</li>
+<li><b>Body in the header:</b> template bodies must be visible wherever they're used, because the compiler generates each
+copy at the call site.</li>
+<li><b>The safety guard</b> the course version usually has:
+<pre><code>static_assert(TPointerIsConvertibleFromTo&lt;T, APawn&gt;::Value,
+              "'T' Template Parameter to GetPawn must be derived from APawn");</code></pre>
+This makes <code>GetOwningPawn&lt;UTexture&gt;()</code> a <b>compile</b> error instead of a runtime crash.
+<code>static_assert</code> is checked by the compiler; <code>check</code> is checked while the game runs.</li>
+</ul>
+
+<div class="box say"><span class="label">Say it for the assignment</span>
+<p>"<code>T</code> is a template parameter, a type the caller supplies, so <code>T*</code> is a pointer to whatever type
+they asked for. The function casts the owner to that type and returns it, so callers get the exact type back without
+casting. It's like a wildcard pin: the type is fixed when you use it, at compile time."</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>In <code>template &lt;class T&gt; T* GetOwningPawn()</code>, what is <code>T</code>?</summary>
+<div class="a"><p>A template parameter: a placeholder type the caller supplies, e.g. <code>GetOwningPawn&lt;AWarriorHeroCharacter&gt;()</code>.</p></div></details>
+<details class="q"><summary>Is the <code>T</code> in <code>template &lt;class T&gt;</code> related to <code>TObjectPtr</code>?</summary>
+<div class="a"><p>No. It's just a parameter name. Unreal's T-prefixed names (<code>TArray</code>, <code>TObjectPtr</code>) are template <i>classes</i>; the prefix is a naming convention.</p></div></details>
+<details class="q"><summary>When is <code>T</code> decided: at compile time or while the game runs?</summary>
+<div class="a"><p>Compile time. The compiler generates a separate copy of the function for each type it's used with.</p></div></details>
+<details class="q"><summary>Why make <code>GetOwningPawn</code> a template instead of returning <code>APawn*</code>?</summary>
+<div class="a"><p>So callers get the exact type back in one call, instead of casting the result at every call site.</p></div></details>
+<details class="q"><summary>How is <code>T</code> like a Blueprint wildcard pin, and where does the analogy stop?</summary>
+<div class="a"><p>Both take their type from what you connect or supply, and a wrong type won't compile or connect. But a template produces a separate compiled copy per type, and the <code>*</code> is a separate "pointer to", not part of the wildcard.</p></div></details>
+<details class="q"><summary><code>static_assert</code> vs <code>check</code>?</summary>
+<div class="a"><p><code>static_assert</code> is checked by the compiler, so a wrong type won't build. <code>check</code> is checked while the game runs, and is removed in Shipping.</p></div></details>
+<details class="q"><summary>Why must a template function's body be in the header?</summary>
+<div class="a"><p>The compiler generates each type's version where it's called, so the full body must be visible there.</p></div></details>
+<details class="q"><summary><code>template &lt;class T&gt;</code> vs <code>template &lt;typename T&gt;</code>?</summary>
+<div class="a"><p>Identical in this position. Pure style.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>
