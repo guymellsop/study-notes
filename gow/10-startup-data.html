@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Startup Data · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Startup data: granting abilities from a data asset</h1>
+<p class="meta">Commit <code>5960ce1</code> + work in progress · <code>DataAsset_StartupDataBase</code>, <code>DataAsset_HeroStartupData</code>, <code>AWarriorBaseCharacter::CharacterStartupData</code> · 9 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Each character gets a <b>data asset listing the abilities it starts with</b>. When the character is possessed, it
+loads that asset and the asset <b>grants each ability</b> to the character's ability system component. That's how
+<code>GA_Hero_SpawnAxe</code> finally runs: it's in the "activate on given" list, so granting it triggers it. Which
+abilities a character starts with is now data (<code>DA_Hero</code>), not code.</p>
+</div>
+
+<h2>The data asset</h2>
+<pre><code>UCLASS()
+class UDataAsset_StartupDataBase : public UDataAsset
+{
+public:
+    virtual void GiveToAbilitySystemComponent(UWarriorAbilitySystemComponent* InASCToGive, int32 ApplyLevel = 1);
+protected:
+    UPROPERTY(EditDefaultsOnly, Category = "Statup Data")
+    TArray&lt;TSubclassOf&lt;UWarriorGameplayAbility&gt;&gt; ActivatedOnGivenAbilities;
+    UPROPERTY(EditDefaultsOnly, Category = "Statup Data")
+    TArray&lt;TSubclassOf&lt;UWarriorGameplayAbility&gt;&gt; ReactiveAbilities;
+
+    void GrantAbilities(const TArray&lt;TSubclassOf&lt;UWarriorGameplayAbility&gt;&gt;&amp; InAbilitiesToGive,
+                        UWarriorAbilitySystemComponent* InASCToGive, int32 ApplyLevel = 1);
+};</code></pre>
+<ul>
+<li><b><code>TSubclassOf&lt;UWarriorGameplayAbility&gt;</code></b>: a <b>class</b>, not an object. You're listing <i>which
+kinds</i> of ability to grant; the ability system creates the instances. The template also filters the editor dropdown to
+only show <code>UWarriorGameplayAbility</code> subclasses. It's the same <code>&lt;T&gt;</code> idea as the
+<a href="09-templates.html">templates page</a>.</li>
+<li><b>Two lists, two jobs:</b>
+  <ul>
+  <li><i>ActivatedOnGiven</i>: abilities with the <code>OnGiven</code> policy that run once, straight away. The axe spawn goes here.</li>
+  <li><i>Reactive</i>: granted now, but they wait for something to trigger them. Think hit reactions and death, which
+  <i>react</i> to events.</li>
+  </ul>
+  In code, both lists are granted the same way. The split is so designers know where to put things. The ability's own
+  activation policy (<a href="07-abilities-weapons.html">last lesson</a>) decides what happens once it's granted.</li>
+<li><b><code>virtual</code> Give…</b>: the hero version (<code>UDataAsset_HeroStartupData</code>, empty for now) can
+override it to grant hero-only extras later, calling <code>Super::</code> for the shared part.</li>
+<li><b>Base + hero subclass</b> again: the same pattern as characters, anim instances and weapons. Enemies will get their
+own subclass.</li>
+</ul>
+
+<h2>Granting: the loop</h2>
+<pre><code>for (const TSubclassOf&lt;UWarriorGameplayAbility&gt;&amp; Ability : InAbilitiesToGive)
+{
+    if (!Ability) continue;                          // skip an empty slot in the editor list
+
+    FGameplayAbilitySpec AbilitySpec(Ability);
+    AbilitySpec.SourceObject = InASCToGive-&gt;GetAvatarActor();
+    AbilitySpec.Level = ApplyLevel;
+    InASCToGive-&gt;GiveAbility(AbilitySpec);
+}</code></pre>
+<ul>
+<li><b>The spec</b>, from the last lesson: "this ability, at this level, on this ASC". You build it, then
+<code>GiveAbility</code> it.</li>
+<li><b><code>SourceObject</code></b>: records <i>what granted this ability</i>. Inside the ability you can read it back
+with <code>GetCurrentSourceObject()</code>. Using the avatar (the character) here means "the character itself granted it".
+It becomes more useful when a <i>weapon</i> grants abilities: the ability can then find out which weapon it belongs to.</li>
+<li><b><code>Level</code></b>: GAS abilities have levels, so damage and costs can scale by level. The default of 1 is fine for now.</li>
+<li><b><code>if (!Ability) continue;</code></b>: someone added a slot to the array and left it empty. Skip it, don't crash.</li>
+<li>The loop is <b>by const reference</b> (<a href="../cpp/pointers-references-const.html">why</a>).</li>
+</ul>
+
+<h2>The character side (work in progress)</h2>
+<pre><code>// WarriorBaseCharacter.h
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "CharacterData")
+TSoftObjectPtr&lt;UDataAsset_StartupDataBase&gt; CharacterStartupData;
+
+// AWarriorBaseCharacter::PossessedBy
+WarriorAbilitySystemComponent-&gt;InitAbilityActorInfo(this, this);
+ensureMsgf(!CharacterStartupData.IsNull(), TEXT("Forgot to assign startup data to %s"), *GetName());
+
+// AWarriorHeroCharacter::PossessedBy
+Super::PossessedBy(NewController);
+if (!CharacterStartupData.IsNull())
+    if (UDataAsset_StartupDataBase* LoadedData = CharacterStartupData.LoadSynchronous())
+        LoadedData-&gt;GiveToAbilitySystemComponent(WarriorAbilitySystemComponent);</code></pre>
+
+<h3>Why a <i>soft</i> pointer?</h3>
+<p>This is your <a href="../unreal/asset-references.html">mock Q9</a> in real code. The startup data lists abilities; the
+abilities reference montages, weapon Blueprints, meshes and sounds. A hard pointer would load all of that <b>whenever the
+character class loads</b>, even in a menu. A <code>TSoftObjectPtr</code> stores only the asset's <b>path</b>, so nothing
+loads until you ask.</p>
+<ul>
+<li><b><code>IsNull()</code></b>: "was a path assigned at all?" It's different from "is it loaded yet?", which is
+<code>IsValid()</code> / <code>Get()</code> returning non-null.</li>
+<li><b><code>LoadSynchronous()</code></b>: "load it now, and wait". Simple, but the game <b>freezes until it's loaded</b>.
+For the one player at spawn that's acceptable. For enemies spawning mid-fight it would hitch, so the usual answer there
+is an <b>async</b> load (<code>UAssetManager</code> / <code>FStreamableManager</code>) with a callback when it's ready.</li>
+</ul>
+
+<h3>Your <code>ensure</code>, in real code</h3>
+<p>The base character checks with <code>ensureMsgf</code>: if nobody assigned startup data, you get a message with a
+callstack in the log, <b>once</b>, and the game keeps running. The character just starts without abilities. That's the
+right choice here: a missing asset is a mistake to report, not a reason to crash the editor. Compare
+<code>checkf</code> on the input config, where the game can't run at all without it.</p>
+<p><code>%s</code> + <code>*GetName()</code> puts the character's name in the message, so you know <i>which</i>
+Blueprint is missing its data. (The same <code>*</code>-on-<code>FString</code> trick as the Debug helper.)</p>
+
+<h3>Order matters: why grant after <code>Super::PossessedBy</code></h3>
+<p>The base <code>PossessedBy</code> calls <code>InitAbilityActorInfo</code>. Granting needs that done first: an
+<code>OnGiven</code> ability activates <i>during</i> <code>GiveAbility</code>, and activation needs to know the owner and
+avatar. Calling <code>Super</code> first guarantees the ASC is set up before anything is granted. Swap the order and the
+axe-spawn ability would try to run without an avatar.</p>
+
+<div class="box yours"><span class="label">Tidy-ups worth doing before you commit</span>
+<ul>
+<li><b>Include order in <code>WarriorHeroCharacter.cpp</code>:</b> <code>AbilitySystem/WarriorAbilitySystemComponent.h</code>
+is now <i>above</i> <code>Characters/WarriorHeroCharacter.h</code>. Unreal's convention is <b>a .cpp includes its own
+header first</b>. That proves the header compiles on its own and doesn't secretly rely on something included before it
+(<a href="../cpp/includes-unity-builds.html">mock Q1</a>). Move it back below.</li>
+<li><code>class UDataAsset_StartupDataBase;</code> is forward-declared <b>twice</b> in <code>WarriorBaseCharacter.h</code>.
+That's legal and harmless; delete one.</li>
+<li>Category <code>"Statup Data"</code> is missing an r, and it shows in the Details panel.</li>
+<li>The parameter is named <code>InAbiliitiesToGive</code> in the .h and <code>InAbiliitiesTGive</code> in the .cpp. It
+compiles, because <b>parameter names in a declaration and a definition don't have to match</b>; the compiler only
+checks types. Still worth making them match.</li>
+<li><code>if (InAbilitiesToGive.IsEmpty()) return;</code> is redundant: a loop over an empty array runs zero times.
+Harmless, and some people like it as a signal of intent.</li>
+</ul>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Why is the list <code>TSubclassOf&lt;UWarriorGameplayAbility&gt;</code> rather than ability objects?</summary>
+<div class="a"><p>You're choosing which <i>classes</i> of ability to grant; GAS creates the instances. <code>TSubclassOf</code> also limits the editor picker to valid subclasses.</p></div></details>
+<details class="q"><summary>ActivatedOnGiven vs Reactive abilities: what goes in each?</summary>
+<div class="a"><p>ActivatedOnGiven: one-shot setup abilities that run as soon as they're granted (spawn the axe). Reactive: granted now, triggered later by events (hit react, death).</p></div></details>
+<details class="q"><summary>What is <code>AbilitySpec.SourceObject</code> for?</summary>
+<div class="a"><p>It records what granted the ability. The ability can read it back (<code>GetCurrentSourceObject()</code>), which is useful when e.g. a weapon grants abilities and they need their weapon.</p></div></details>
+<details class="q"><summary>Why is <code>CharacterStartupData</code> a soft pointer?</summary>
+<div class="a"><p>A hard pointer would load the data asset and everything it references (abilities → montages, weapons, sounds) whenever the character class loads. Soft stores only a path until you load it.</p></div></details>
+<details class="q"><summary><code>IsNull()</code> vs <code>IsValid()</code> on a <code>TSoftObjectPtr</code>?</summary>
+<div class="a"><p><code>IsNull()</code>: no path assigned at all. <code>IsValid()</code>: the asset is currently loaded. A soft pointer can be assigned but not loaded.</p></div></details>
+<details class="q"><summary>What's the cost of <code>LoadSynchronous()</code>, and when would you avoid it?</summary>
+<div class="a"><p>The game thread waits until the asset loads, which means a hitch. Fine for the player at spawn; for enemies spawning during play, use an async load with a callback.</p></div></details>
+<details class="q"><summary>Why <code>ensureMsgf</code> for missing startup data, but <code>checkf</code> for the missing input config?</summary>
+<div class="a"><p>Without startup data the character still works, just without abilities: report it and carry on. Without the input config nothing can be bound, so crash loudly with a clear message.</p></div></details>
+<details class="q"><summary>Why must abilities be granted <i>after</i> <code>Super::PossessedBy</code>?</summary>
+<div class="a"><p>The base version calls <code>InitAbilityActorInfo</code>. OnGiven abilities activate during <code>GiveAbility</code> and need the owner/avatar info already set.</p></div></details>
+<details class="q"><summary>Why should a .cpp include its own header first?</summary>
+<div class="a"><p>It proves the header compiles on its own. If it secretly needed something, that shows up as an error now, instead of later when include order or unity grouping changes.</p></div></details>
+<details class="q"><summary>The parameter is named differently in the .h and .cpp. Does it compile?</summary>
+<div class="a"><p>Yes. Only the types have to match; names in the declaration are ignored by the compiler.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

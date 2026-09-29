@@ -14,6 +14,7 @@ const TOPICS = [
   { cat: "gow", url: "gow/07-abilities-weapons.html", title: "Activation policy and the weapon" },
   { cat: "gow", url: "gow/08-cpp-toolkit.html", title: "The C++ vocabulary the course uses" },
   { cat: "gow", url: "gow/09-templates.html", title: "Templates and T*" },
+  { cat: "gow", url: "gow/10-startup-data.html", title: "Startup data: granting abilities" },
   // C++
   { cat: "cpp", url: "cpp/pointers-references-const.html", title: "Values, references, pointers, const" },
   { cat: "cpp", url: "cpp/containers-move.html", title: "Containers move: the TArray reference bug" },
