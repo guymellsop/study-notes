@@ -10,8 +10,8 @@
 <body>
 <nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">C++</a></nav>
 <main>
-<h1>Values, references, pointers, const</h1>
-<p class="meta">Study plan 2.1 (reading C++, not writing it) · 7 min</p>
+<h1>Values, references, pointers, const, structs</h1>
+<p class="meta">Study plan 2.1 (reading C++, not writing it) · 11 min</p>
 
 <div class="box tldr"><span class="label">In one breath</span>
 <p>A <b>value</b> is a copy. A <b>reference</b> (<code>&amp;</code>) is another name for something that already exists,
@@ -51,6 +51,57 @@ copy per element. Writing <code>for (FWarriorInputActionConfig Config : ...)</co
 but slower, and edits to <code>Config</code> would change nothing.</li>
 </ul>
 
+<h3>Const things can only call const functions</h3>
+<pre><code>struct FWarriorInputActionConfig {
+    FGameplayTag InputTag;
+    UInputAction* InputAction = nullptr;
+    bool IsValid() const { return InputTag.IsValid() &amp;&amp; InputAction; }
+};
+
+for (const FWarriorInputActionConfig&amp; Config : NativeInputActions)
+    if (Config.IsValid()) { ... }       // OK only because IsValid() is const</code></pre>
+<p><code>Config</code> is a <b>const reference</b>, so you may only call functions on it that have promised not to change
+it. Drop the <code>const</code> from <code>IsValid()</code> and that line becomes a <b>compile error</b>. It's the same
+chain that lets <code>FindNativeInputActionByTag(...) const</code> be called through a <code>const UDataAsset_InputConfig*</code>.</p>
+<p><b>Habit:</b> any member function that only <i>reads</i> (getters, <code>IsValid</code>, <code>Find...</code>) gets
+<code>const</code> at the end.</p>
+<p><b>Pointer → bool:</b> <code>&amp;&amp; InputAction</code> works because a pointer converts to <code>bool</code>:
+<code>nullptr</code> is false, anything else is true.</p>
+
+<h3>const and pointers: read right to left</h3>
+<div class="table-wrap"><table>
+<tr><th>Declaration</th><th>Read it as</th><th>Can change the thing?</th><th>Can re-point?</th></tr>
+<tr><td><code>UInputAction* P</code></td><td>pointer to UInputAction</td><td>Yes</td><td>Yes</td></tr>
+<tr><td><code>const UInputAction* P</code></td><td>pointer to a <b>const</b> UInputAction</td><td><b>No</b></td><td>Yes</td></tr>
+<tr><td><code>UInputAction* const P</code></td><td><b>const</b> pointer to UInputAction</td><td>Yes</td><td><b>No</b></td></tr>
+<tr><td><code>const UInputAction* const P</code></td><td>const pointer to a const UInputAction</td><td>No</td><td>No</td></tr>
+</table></div>
+<p>The one you'll see constantly is the second: <code>const UDataAsset_InputConfig* InInputConfig</code> means "I'll read your
+data asset, not change it".</p>
+
+<h2>Structs vs classes</h2>
+<p>In C++ they're <b>almost identical</b>. Both can have functions, constructors and inheritance. The only language
+difference is the default access:</p>
+<div class="table-wrap"><table>
+<tr><th></th><th>Members are, by default</th></tr>
+<tr><td><code>struct</code></td><td><b>public</b></td></tr>
+<tr><td><code>class</code></td><td><b>private</b></td></tr>
+</table></div>
+<p>So a <code>public:</code> inside a struct is harmless but does nothing.</p>
+
+<h3>The Unreal convention</h3>
+<div class="table-wrap"><table>
+<tr><th></th><th><code>UCLASS</code> (U / A prefix)</th><th><code>USTRUCT</code> (F prefix)</th></tr>
+<tr><td>What it is</td><td>A <b>UObject</b></td><td><b>Plain data</b>, a value</td></tr>
+<tr><td>Lives</td><td>On the heap, handled by pointer</td><td>Inside whatever holds it (a member, a <code>TArray</code>), copied around</td></tr>
+<tr><td>Garbage collected?</td><td>Yes</td><td>No (but its <code>UPROPERTY</code> UObject pointers are tracked)</td></tr>
+<tr><td>C++ functions</td><td>Yes</td><td>Yes, like <code>IsValid()</code></td></tr>
+<tr><td><code>UFUNCTION</code> (callable from Blueprint)</td><td>Yes</td><td><b>No</b>. Use a static function in a Blueprint Function Library that takes the struct</td></tr>
+<tr><td>Examples</td><td><code>AWarriorHeroCharacter</code>, <code>UDataAsset_InputConfig</code></td><td><code>FVector</code>, <code>FGameplayTag</code>, <code>FWarriorInputActionConfig</code></td></tr>
+</table></div>
+<p><b>Why put a function on a struct at all?</b> The struct answers a question about its own data, so every caller doesn't
+repeat <code>InputTag.IsValid() &amp;&amp; InputAction</code>. If the definition of "valid" changes, it changes in one place.</p>
+
 <h2>Declaration vs definition, header vs cpp</h2>
 <ul>
 <li><b>Declaration</b>: "this exists, here's its shape". Goes in the <code>.h</code> so others can use it.</li>
@@ -71,6 +122,18 @@ and class bodies.</li>
 <div class="a"><p>A reference can't be null and can't be re-seated to another object. A pointer can be null and can be re-pointed. (And you use <code>.</code> vs <code>-&gt;</code>.)</p></div></details>
 <details class="q"><summary>What's wrong with <code>for (FBigStruct S : Array) { S.Value = 0; }</code>?</summary>
 <div class="a"><p>It copies each element, and sets the <i>copy</i>'s value, so the array is unchanged. Use <code>FBigStruct&amp; S</code> to modify, or <code>const FBigStruct&amp;</code> to read.</p></div></details>
+<details class="q"><summary>You remove <code>const</code> from <code>IsValid()</code>. Why does <code>for (const FWarriorInputActionConfig&amp; Config : ...) Config.IsValid();</code> stop compiling?</summary>
+<div class="a"><p><code>Config</code> is const, and a const object may only call const member functions. Without <code>const</code>, <code>IsValid()</code> no longer promises not to change it.</p></div></details>
+<details class="q"><summary><code>const UInputAction* P</code> vs <code>UInputAction* const P</code>?</summary>
+<div class="a"><p>First: pointer to a const action, so you can't change the action but can re-point P. Second: const pointer, so you can change the action but can't re-point P. Read right to left.</p></div></details>
+<details class="q"><summary>Why does <code>return InputTag.IsValid() &amp;&amp; InputAction;</code> compile when <code>InputAction</code> is a pointer?</summary>
+<div class="a"><p>Pointers convert to bool: <code>nullptr</code> is false, anything else is true.</p></div></details>
+<details class="q"><summary>What's the only language difference between <code>struct</code> and <code>class</code>?</summary>
+<div class="a"><p>Default access: struct members are public by default, class members private. Everything else (functions, constructors, inheritance) works in both.</p></div></details>
+<details class="q"><summary>Can a <code>USTRUCT</code> have functions? Can Blueprint call them?</summary>
+<div class="a"><p>It can have normal C++ functions, but not <code>UFUNCTION</code>s, so Blueprint can't call them directly. Wrap them in a static function in a Blueprint Function Library.</p></div></details>
+<details class="q"><summary>Unreal convention: when <code>USTRUCT</code> (F) vs <code>UCLASS</code> (U/A)?</summary>
+<div class="a"><p>USTRUCT for plain data values that get copied and live inside something else (no GC of their own). UCLASS for UObjects: heap-allocated, held by pointer, garbage collected, can have UFUNCTIONs.</p></div></details>
 </section>
 
 <div class="page-end"></div>

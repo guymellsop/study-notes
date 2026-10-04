@@ -16,7 +16,7 @@ const TOPICS = [
   { cat: "gow", url: "gow/09-templates.html", title: "Templates and T*" },
   { cat: "gow", url: "gow/10-startup-data.html", title: "Startup data: granting abilities" },
   // C++
-  { cat: "cpp", url: "cpp/pointers-references-const.html", title: "Values, references, pointers, const" },
+  { cat: "cpp", url: "cpp/pointers-references-const.html", title: "Values, references, pointers, const, structs" },
   { cat: "cpp", url: "cpp/containers-move.html", title: "Containers move: the TArray reference bug" },
   { cat: "cpp", url: "cpp/includes-unity-builds.html", title: "Includes, unity builds, PCH, IWYU" },
   // Unreal internals
