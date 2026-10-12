@@ -18,7 +18,9 @@ const TOPICS = [
   // C++
   { cat: "cpp", url: "cpp/pointers-references-const.html", title: "Values, references, pointers, const, structs" },
   { cat: "cpp", url: "cpp/containers-move.html", title: "Containers move: the TArray reference bug" },
+  { cat: "cpp", url: "cpp/how-unreal-builds.html", title: "How Unreal builds your code" },
   { cat: "cpp", url: "cpp/includes-unity-builds.html", title: "Includes, unity builds, PCH, IWYU" },
+  { cat: "cpp", url: "cpp/lambdas.html", title: "Lambdas" },
   // Unreal internals
   { cat: "unreal", url: "unreal/garbage-collection.html", title: "Garbage collection and UPROPERTY" },
   { cat: "unreal", url: "unreal/asset-references.html", title: "Hard vs soft references" },

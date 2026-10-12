@@ -19,6 +19,8 @@ precompiled headers</b> pre-include common stuff. When the grouping changes, the
 borrowing and breaks. Prevent it with <b>IWYU</b> (include what you use) and a <b>non-unity build</b> on CI.</p>
 </div>
 
+<p class="hint">New to unity builds? Start with <a href="how-unreal-builds.html">How Unreal builds your code</a>; this page is the interview-question version.</p>
+
 <h2>The question</h2>
 <p>A .cpp uses <code>FMath::Clamp</code> without including its header and compiles fine. Two weeks later an unrelated
 change (adding a new .cpp to the module) makes it fail. Why did it compile, why did it break, and how do you prevent it?</p>

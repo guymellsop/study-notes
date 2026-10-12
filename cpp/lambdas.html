@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Lambdas · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">C++</a></nav>
+<main>
+<h1>Lambdas</h1>
+<p class="meta">Small functions written right where you need them · 9 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>A lambda is a <b>function with no name, written inline</b>, right where it's used, usually to hand to something else
+("call this when the timer fires", "sort using this rule"). The <code>[ ]</code> at the start says which outside variables
+it can use. The big danger: a lambda that runs <b>later</b> can outlive what it captured.</p>
+</div>
+
+<h2>The shape</h2>
+<pre><code>[ capture ] ( parameters ) { body }
+
+auto Add = [](int32 A, int32 B) { return A + B; };
+int32 Five = Add(2, 3);</code></pre>
+<ul>
+<li><code>[ ]</code>: the <b>capture list</b>, which outside variables the lambda can see. Empty means none.</li>
+<li><code>( )</code>: parameters, exactly like a normal function.</li>
+<li><code>{ }</code>: the body. The return type is worked out from the <code>return</code>.</li>
+<li><code>auto</code>: every lambda has its own unnamed type that you can't write out, so you let the compiler fill it in.</li>
+</ul>
+<p><b>Blueprint comparison:</b> it's like dragging a red event pin into a <i>Set Timer by Event</i> or <i>Bind Event</i>
+node and building the logic right there, instead of making a separate named function or custom event somewhere else.</p>
+
+<h2>Captures: what the lambda can see</h2>
+<div class="table-wrap"><table>
+<tr><th>Capture</th><th>Means</th></tr>
+<tr><td><code>[]</code></td><td>Nothing from outside</td></tr>
+<tr><td><code>[this]</code></td><td>The object you're in, so you can use its members and functions</td></tr>
+<tr><td><code>[Damage]</code></td><td>A <b>copy</b> of <code>Damage</code>, taken when the lambda is made</td></tr>
+<tr><td><code>[&amp;Damage]</code></td><td>A <b>reference</b> to <code>Damage</code>, the original variable</td></tr>
+<tr><td><code>[=]</code> / <code>[&amp;]</code></td><td>Everything used, by copy / by reference. Convenient, but hides what's captured; Epic's style guide prefers listing them</td></tr>
+</table></div>
+
+<h2>Where you'll meet them in Unreal</h2>
+<h3>1. Finding things in an array</h3>
+<p>Your <code>FindNativeInputActionByTag</code>, rewritten with <code>FindByPredicate</code>:</p>
+<pre><code>const FWarriorInputActionConfig* Found = NativeInputActions.FindByPredicate(
+    [&amp;InInputTag](const FWarriorInputActionConfig&amp; Config)
+    {
+        return Config.InputTag == InInputTag &amp;&amp; Config.InputAction;
+    });
+return Found ? Found-&gt;InputAction : nullptr;</code></pre>
+<p>The array calls your lambda once per element and returns a pointer to the first one where it returned
+<code>true</code>, or <code>nullptr</code>. Same result as your loop. Whether it's clearer is a matter of taste.
+(<code>Found</code> is a pointer into the array, so the <a href="containers-move.html">TArray rule</a> applies: use it
+straight away.)</p>
+
+<h3>2. Sorting</h3>
+<pre><code>Enemies.Sort([](const AActor&amp; A, const AActor&amp; B)
+{
+    return A.GetActorLocation().Z &lt; B.GetActorLocation().Z;   // "A comes before B if..."
+});</code></pre>
+
+<h3>3. "Do this later": timers, async loads, delegates</h3>
+<pre><code>FTimerHandle Handle;
+GetWorldTimerManager().SetTimer(Handle, [this]()
+{
+    Debug::Print(TEXT("Two seconds later"));
+}, 2.0f, false);</code></pre>
+<p>Or, from the <a href="../gow/10-startup-data.html">startup data</a> lesson, the async version of
+<code>LoadSynchronous</code>: "load this in the background, and <i>run this lambda</i> when it's done."</p>
+
+<div class="box warn"><span class="label">The trap: lambdas that run later</span>
+<p>A lambda that runs <b>right now</b> (FindByPredicate, Sort) is safe to capture anything. A lambda that runs
+<b>later</b> (timer, async load, delegate) may run after what it captured is gone:</p>
+<ul>
+<li><b><code>[this]</code></b>: if the actor is destroyed before the timer fires, <code>this</code> is a dangling pointer,
+the same family of bug as <a href="../unreal/garbage-collection.html">mock Q3</a>. A timer bound with
+<code>SetTimer(Handle, this, &amp;ThisClass::Func, ...)</code> is cleared when the actor ends play, because the timer knows
+its object. A <b>lambda</b> timer has no owner, so it <b>isn't</b>, and the same goes for most async-load callbacks.
+Clear lambda timers yourself in <code>EndPlay</code>, or use the weak pointer pattern below.</li>
+<li><b><code>[&amp;LocalVariable]</code></b>: the function returns, the local dies, and the lambda holds a reference to
+nothing, just like the <a href="containers-move.html">TArray reference</a>.</li>
+</ul>
+<p><b>The safe pattern:</b> capture a <b>weak pointer</b> and check it when the lambda runs:</p>
+<pre><code>TWeakObjectPtr&lt;ThisClass&gt; WeakThis(this);
+StartAsyncLoad([WeakThis]()
+{
+    if (!WeakThis.IsValid()) return;   // we were destroyed while loading: do nothing
+    WeakThis-&gt;OnLoaded();
+});</code></pre>
+<p>And capture plain values (<code>int32</code>, <code>FName</code>) <b>by copy</b> when the lambda runs later.</p>
+</div>
+
+<h2>When not to use one</h2>
+<ul>
+<li><b>Dynamic delegates.</b> Lambdas can't be a <code>UFUNCTION</code>. <i>Dynamic</i> delegates, the ones Blueprint can
+bind too, like <code>OnComponentBeginOverlap</code>, only accept a named <code>UFUNCTION</code> via
+<code>AddDynamic(this, &amp;ThisClass::OnOverlap)</code>. Your weapon's collision box will need exactly this. (Ordinary C++
+delegates are fine with lambdas: <code>AddLambda</code>, <code>CreateLambda</code>.)</li>
+<li><b>It's long.</b> Twenty lines of lambda inside a function call is hard to read. Give it a name.</li>
+<li><b>You'd copy-paste it.</b> Same logic in two places? Make it a function.</li>
+</ul>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>What is a lambda, in one sentence?</summary>
+<div class="a"><p>An unnamed function written inline where it's used, usually passed to something else to call.</p></div></details>
+<details class="q"><summary>What do the three bracket types in <code>[ ]( ){ }</code> hold?</summary>
+<div class="a"><p><code>[ ]</code> captures (outside variables it can use), <code>( )</code> parameters, <code>{ }</code> the body.</p></div></details>
+<details class="q"><summary><code>[Damage]</code> vs <code>[&amp;Damage]</code>?</summary>
+<div class="a"><p>A copy taken when the lambda is created, vs a reference to the original variable (which sees later changes, and dangles if the variable dies).</p></div></details>
+<details class="q"><summary>Why is <code>auto</code> used to store a lambda?</summary>
+<div class="a"><p>Each lambda has its own unique unnamed type that you can't write out.</p></div></details>
+<details class="q"><summary>Why is <code>[this]</code> risky in an async-load callback but fine in <code>Sort</code>?</summary>
+<div class="a"><p>Sort runs the lambda immediately while the object definitely exists. An async callback runs later, possibly after the object is destroyed, so <code>this</code> dangles.</p></div></details>
+<details class="q"><summary>What's the safe way to refer to the owning object in a delayed lambda?</summary>
+<div class="a"><p>Capture a <code>TWeakObjectPtr</code> to it, and check <code>IsValid()</code> at the start of the lambda.</p></div></details>
+<details class="q"><summary>What does <code>FindByPredicate</code> return?</summary>
+<div class="a"><p>A pointer to the first element for which the lambda returns true, or <code>nullptr</code>.</p></div></details>
+<details class="q"><summary>Why can't you bind a lambda to <code>OnComponentBeginOverlap</code>?</summary>
+<div class="a"><p>It's a <i>dynamic</i> delegate (usable from Blueprint), which binds through reflection with <code>AddDynamic</code> and needs a named <code>UFUNCTION</code>. A lambda has no name and can't be a UFUNCTION.</p></div></details>
+<details class="q"><summary>Blueprint equivalent of a lambda?</summary>
+<div class="a"><p>Roughly: wiring an event pin straight into a node like <i>Set Timer by Event</i> or <i>Bind Event</i> and building the logic there, instead of a separate named function.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

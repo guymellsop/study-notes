@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>How Unreal Builds Code · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">C++</a></nav>
+<main>
+<h1>How Unreal builds your code</h1>
+<p class="meta"><code>#pragma once</code> · why Build.cs is C# · unity builds from scratch · 10 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>When you press Compile, a <b>C# program</b> called UnrealBuildTool runs your <b>Build.cs</b> to learn the module's
+settings. It runs the <b>header tool</b> to generate the <code>.generated.h</code> files, glues your .cpp files into a few big
+<b>unity</b> files so they compile faster, then hands those to the C++ compiler. <code>#pragma once</code> stops any one
+header being pasted in twice along the way.</p>
+</div>
+
+<h2>The whole trip, in order</h2>
+<ol>
+<li><b>UnrealBuildTool (UBT)</b> starts. It's written in <b>C#</b>.</li>
+<li>UBT <b>compiles and runs every <code>.Build.cs</code> and <code>.Target.cs</code></b> to find out each module's
+dependencies and settings.</li>
+<li>UBT runs <b>UnrealHeaderTool (UHT)</b>. UHT reads your headers, finds every <code>UCLASS</code>, <code>UPROPERTY</code>
+and <code>UFUNCTION</code>, and writes the <code>.generated.h</code> and <code>.gen.cpp</code> files (the reflection code that
+lets Blueprint, the editor and the garbage collector see your stuff).</li>
+<li>UBT writes the <b>unity files</b>, which glue many .cpp files together.</li>
+<li>UBT runs the actual <b>C++ compiler</b> (MSVC on Windows) on them, then the linker.</li>
+<li>Out comes <code>UnrealEditor-WadOfGore.dll</code>, which the editor loads.</li>
+</ol>
+
+<h2>Why is there a Build.cs when Unreal doesn't use C#?</h2>
+<p>Your <i>game</i> doesn't use C#, but the <b>build tool</b> does. A Build.cs isn't part of your game at all. It's a
+<b>small C# program that UBT runs</b> to ask your module questions: "what other modules do you need? which PCH setting? any
+special flags?"</p>
+<pre><code>public class WadOfGore : ModuleRules            // a C# class
+{
+    public WadOfGore(ReadOnlyTargetRules Target) : base(Target)   // UBT calls this
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PublicDependencyModuleNames.AddRange(new string[] { "Core", "Engine", "GameplayAbilities" });
+    }
+}</code></pre>
+<p>UBT compiles every Build.cs into a little "rules" library (that's the
+<code>Intermediate/Build/BuildRulesProjects/WadOfGoreModuleRules</code> folder in your project), creates your class, and
+reads the lists you filled in. From those it builds the compiler and linker command lines.</p>
+<p><b>Why a real programming language instead of a settings file?</b> Because the settings sometimes need
+<b>logic</b>:</p>
+<pre><code>if (Target.bBuildEditor)                       // only in editor builds...
+    PrivateDependencyModuleNames.Add("UnrealEd");  // ...link the editor module
+if (Target.Platform == UnrealTargetPlatform.Win64) { ... }</code></pre>
+<p>Your ModularShapes plugin does exactly this, gating editor-only dependencies behind <code>Target.bBuildEditor</code>.
+UBT is already C#, so letting rules be C# means no separate config language to invent, and Visual Studio / Rider
+autocomplete works on them.</p>
+<div class="table-wrap"><table>
+<tr><th>File</th><th>Describes</th></tr>
+<tr><td><code>WadOfGore.Build.cs</code></td><td>One <b>module</b>: its dependencies and settings</td></tr>
+<tr><td><code>WadOfGore.Target.cs</code></td><td>What gets <b>built</b>: the game</td></tr>
+<tr><td><code>WadOfGoreEditor.Target.cs</code></td><td>What gets <b>built</b>: the editor version</td></tr>
+</table></div>
+
+<h2><code>#pragma once</code></h2>
+<p><code>#include</code> is dumber than it looks: it <b>literally copies and pastes</b> the whole header into your file
+before compiling. Now imagine:</p>
+<pre><code>// WarriorHeroCharacter.cpp
+#include "Characters/WarriorHeroCharacter.h"  // which includes WarriorBaseCharacter.h
+#include "Characters/WarriorBaseCharacter.h"  // pasted again!</code></pre>
+<p>Without protection, <code>AWarriorBaseCharacter</code> would be pasted <b>twice</b> into the same file, and the
+compiler would stop with "class type redefinition". <code>#pragma once</code> at the top of a header tells the compiler:
+<b>"if this file has already been pasted into this .cpp, skip it"</b>.</p>
+<p>The old way, which you'll still see in older code, is an <b>include guard</b>:</p>
+<pre><code>#ifndef WARRIOR_BASE_CHARACTER_H
+#define WARRIOR_BASE_CHARACTER_H
+// ... the header ...
+#endif</code></pre>
+<p>Same effect, more typing, and you can mess up the name. <code>#pragma once</code> isn't technically in the C++ standard,
+but every compiler Unreal supports understands it, and it's Epic's convention. Every header in WadOfGore has it (25 out of 25).</p>
+
+<div class="box warn"><span class="label">What pragma once does NOT do</span>
+<p>It works <b>per .cpp file</b>. Ten different .cpp files can each include the header once, which is normal and
+necessary. So it won't save you from <b>defining a variable in a header</b>: each .cpp gets its own copy and the
+<i>linker</i> complains about duplicates. That's why the gameplay tags are <i>declared</i> in the .h and <i>defined</i> in
+one .cpp (<a href="../gow/02-gameplay-tags.html">tags page</a>).</p>
+</div>
+
+<h2>Unity builds, from scratch</h2>
+<p><b>The problem.</b> Every .cpp is compiled separately, and every one starts by including big engine headers
+(<code>CoreMinimal.h</code>, <code>Engine.h</code>…), tens of thousands of lines. 25 .cpp files means the compiler
+reads those same headers 25 times. The engine has thousands of .cpp files.</p>
+<p><b>The trick.</b> UBT writes a generated .cpp that just <code>#include</code>s a batch of your .cpp files, one after
+another, and compiles <b>that</b> instead. Shared headers get read <b>once per batch</b> instead of once per file. Here's
+yours, from <code>Intermediate/.../Module.WadOfGore.cpp</code>:</p>
+<pre><code>// This file is automatically generated at compile-time to include
+// some subset of the user-created cpp files.
+#include ".../UHT/DataAsset_HeroStartupData.gen.cpp"
+#include ".../UHT/WarriorBaseCharacter.gen.cpp"
+...
+#include ".../Source/WadOfGore/Private/AbilitySystem/Abilities/WarriorGameplayAbility.cpp"
+#include ".../Source/WadOfGore/Private/AnimInstances/Hero/WarriorHeroAnimInstance.cpp"
+...</code></pre>
+<p>Your module is small, so <b>everything fits in one unity file</b>. Big modules get split into several.</p>
+<p><b>Analogy:</b> 25 separate trips to the shop, each buying the same staples, vs one big trip.</p>
+
+<h3>The side effects (why it's an interview question)</h3>
+<ul>
+<li><b>Borrowed includes.</b> A file can use a header it never included, because an earlier file in the same batch did.
+It compiles until the batch changes, then breaks "for no reason". That was your
+<a href="includes-unity-builds.html">mock Q1</a>.</li>
+<li><b>Name clashes.</b> Two .cpp files that each define their own <code>static void Helper()</code> are fine separately,
+but in one unity file they're the same name twice. Error.</li>
+<li><b>Recompile size.</b> Change one .cpp and the whole batch recompiles. UBT's <b>adaptive unity</b> pulls files you're
+editing out of the batch so iteration stays fast. That's also why "I touched this file and now it won't compile" happens.</li>
+</ul>
+<p>Turn it off to check for hidden problems: <code>bUseUnity = false</code> in Build.cs, or
+<code>-DisableUnity</code> on the command line.</p>
+
+<h2>And the <code>.generated.h</code> include?</h2>
+<p>Step 3 above. UHT writes <code>WarriorHeroCharacter.generated.h</code> from your header, and <code>GENERATED_BODY()</code>
+pastes its contents into your class. It must be the <b>last</b> include in the header, because UHT's code expects
+everything above it to already be defined.</p>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Unreal games are C++. Why is Build.cs written in C#?</summary>
+<div class="a"><p>It's run by UnrealBuildTool, which is a C# program. Build.cs is a small C# class UBT executes to learn a module's dependencies and settings. It's never part of the game.</p></div></details>
+<details class="q"><summary>Why use real code for build settings instead of a plain config file?</summary>
+<div class="a"><p>Settings sometimes need logic, e.g. <code>if (Target.bBuildEditor)</code> to add editor-only dependencies, or per-platform choices.</p></div></details>
+<details class="q"><summary>Build.cs vs Target.cs?</summary>
+<div class="a"><p>Build.cs describes one module (dependencies, settings). Target.cs describes what gets built (the game, or the editor).</p></div></details>
+<details class="q"><summary>What does <code>#include</code> actually do?</summary>
+<div class="a"><p>Copies and pastes the header's contents into the file before compiling.</p></div></details>
+<details class="q"><summary>What problem does <code>#pragma once</code> solve?</summary>
+<div class="a"><p>A header reaching the same .cpp twice (often through other headers), which would define its classes twice and cause redefinition errors. It makes the second include a no-op.</p></div></details>
+<details class="q"><summary>What's the older alternative to <code>#pragma once</code>?</summary>
+<div class="a"><p>Include guards: <code>#ifndef NAME</code> / <code>#define NAME</code> / <code>#endif</code> around the header.</p></div></details>
+<details class="q"><summary>Does <code>#pragma once</code> stop a variable defined in a header from causing duplicate-symbol errors?</summary>
+<div class="a"><p>No. It only works within one .cpp. Each .cpp that includes the header gets its own definition, and the linker sees duplicates. Declare in the .h, define in one .cpp.</p></div></details>
+<details class="q"><summary>What is a unity build, and why does Unreal use it?</summary>
+<div class="a"><p>UBT generates a .cpp that includes a batch of your .cpp files and compiles that, so shared headers are parsed once per batch instead of once per file. Much faster full builds.</p></div></details>
+<details class="q"><summary>Name two side effects of unity builds.</summary>
+<div class="a"><p>Hidden missing includes (borrowed from a neighbour in the batch); name clashes between file-local helpers; bigger recompiles per change (eased by adaptive unity).</p></div></details>
+<details class="q"><summary>In what order do UBT, UHT and the C++ compiler run?</summary>
+<div class="a"><p>UBT starts and runs the Build.cs rules → UHT generates <code>.generated.h</code> / <code>.gen.cpp</code> → UBT writes unity files → the C++ compiler and linker run.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>
