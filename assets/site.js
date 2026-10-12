@@ -15,6 +15,9 @@ const TOPICS = [
   { cat: "gow", url: "gow/08-cpp-toolkit.html", title: "The C++ vocabulary the course uses" },
   { cat: "gow", url: "gow/09-templates.html", title: "Templates and T*" },
   { cat: "gow", url: "gow/10-startup-data.html", title: "Startup data: granting abilities" },
+  { cat: "gow", url: "gow/11-combat-components.html", title: "Combat components: where weapons live" },
+  { cat: "gow", url: "gow/12-ability-input.html", title: "Ability input: press a button, activate by tag" },
+  { cat: "gow", url: "gow/13-equip-anim-layers.html", title: "Equip and unequip: montages, events, anim layers" },
   // C++
   { cat: "cpp", url: "cpp/pointers-references-const.html", title: "Values, references, pointers, const, structs" },
   { cat: "cpp", url: "cpp/containers-move.html", title: "Containers move: the TArray reference bug" },
