@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Equip and Anim Layers · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Equip and unequip: montages, gameplay events, anim layers</h1>
+<p class="meta">Commits <code>8d6e783</code>, <code>7a3d5fc</code> + work in progress · <code>GA_Hero_EquipAxe</code>, <code>AN_SendGameplayEvent</code>, <code>ALI_Hero</code>, <code>AnimLayer_Hero_Axe</code>, <code>FWarriorWeaponData</code> · 10 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Pressing E runs the equip ability. It plays a <b>montage</b> (reach for the axe). At the exact frame the hand closes, an
+<b>anim notify sends a gameplay event</b>; the ability is <b>waiting for that event</b>, and attaches the axe to the hand. Then
+the character's locomotion switches to <b>axe animations by linking a different anim layer</b>. Unequip is the same in
+reverse.</p>
+</div>
+
+<div class="box yours"><span class="label">Note on sources</span>
+<p>Most of this lesson lives in <b>Blueprint assets</b>, which I can't read as text. The flow below is the standard GAS
+pattern that your asset and tag names match (<code>AN_SendGameplayEvent</code>, <code>Player.Event.Equip.Axe</code>,
+<code>ALI_Hero</code>, <code>AnimLayer_Hero_Axe</code>). Open <code>GA_Hero_EquipAxe</code> next to this page and check each
+step against your actual graph. That's a good study exercise in itself.</p>
+</div>
+
+<h2>The flow inside <code>GA_Hero_EquipAxe</code></h2>
+<ol>
+<li><b>Play Montage and Wait</b> → <code>AM_Hero_Axe_Equip</code>. An ability <i>task</i>: starts the montage and lets the
+ability keep going while it plays.</li>
+<li>At the same time, <b>Wait Gameplay Event</b> for <code>Player.Event.Equip.Axe</code>.</li>
+<li>In the montage, at the frame the hand grabs the axe, <b><code>AN_SendGameplayEvent</code></b> fires: "send
+<code>Player.Event.Equip.Axe</code> to my owner".</li>
+<li>The wait completes. The ability gets the axe (<a href="11-combat-components.html">combat component</a>, by tag
+<code>Player.Weapon.Axe</code>), <b>attaches it to the hand socket</b>, sets <code>CurrentEquippedWeaponTag</code>, and
+<b>links the axe anim layer</b>.</li>
+<li>Montage ends → <b>End Ability</b>.</li>
+</ol>
+
+<h3>Why an event from the animation, not a timer?</h3>
+<p>"Attach after 0.4 seconds" breaks the moment someone changes the animation's speed or length, or the montage plays at a
+different rate. A notify placed <b>on the frame where the hand closes</b> is always in sync, because the <b>animation itself says
+when</b>. It's the same "one source of truth" idea as the <a href="../unreal/tick-and-frame.html">Niagara drift
+question</a>.</p>
+<p><b>Why a <i>gameplay event</i> rather than an ordinary anim notify event?</b> Gameplay events go through the ASC with a
+<b>tag</b>, so the notify doesn't need to know about the ability, and the ability doesn't need to know about the montage.
+One generic <code>AN_SendGameplayEvent</code> with a tag field serves every ability.</p>
+
+<h2>Anim layers: swapping whole sets of animations</h2>
+<div class="table-wrap"><table>
+<tr><th>Asset</th><th>Role</th></tr>
+<tr><td><code>ALI_Hero</code></td><td><b>Animation Layer Interface</b>: declares the layer <i>slots</i>, e.g. "Locomotion", without any animation in them</td></tr>
+<tr><td><code>ABP_HeroCharacter</code></td><td>The main anim BP. Its graph <b>calls</b> the layers but doesn't define them</td></tr>
+<tr><td><code>MasterAnimLayer_Hero</code></td><td>Shared parent for layer Blueprints (based on <code>UWarriorHeroLinkedAnimLayer</code>)</td></tr>
+<tr><td><code>AnimLayer_Hero_Axe</code></td><td>Fills the slots with axe animations (<code>BS_DefaultLocomotion_Axe</code>)</td></tr>
+</table></div>
+<p>Equipping calls <b><code>LinkAnimClassLayers(AnimLayer_Hero_Axe)</code></b> on the mesh: the main graph stays the same,
+but its "Locomotion" slot now plays the axe version. Unequipping calls <code>UnlinkAnimClassLayers</code>, and it falls back to
+unarmed. This is the interface pattern again, applied to animation: the main graph depends on the <i>interface</i>, not on
+any particular weapon's animations.</p>
+
+<h3>The C++ bit: reaching the main anim instance from a layer</h3>
+<pre><code>UFUNCTION(BlueprintPure, meta = (BlueprintThreadSafe))
+UWarriorHeroAnimInstance* GetHeroAnimInstance() const;
+
+UWarriorHeroAnimInstance* UWarriorHeroLinkedAnimLayer::GetHeroAnimInstance() const
+{
+    return Cast&lt;UWarriorHeroAnimInstance&gt;(GetOwningComponent()-&gt;GetAnimInstance());
+}</code></pre>
+<ul>
+<li>A linked layer is its <b>own</b> anim instance. It doesn't have <code>GroundSpeed</code> and friends. This getter fetches
+the <b>main</b> instance (the mesh's) so the layer's blend space can read <i>its</i> variables.</li>
+<li><b><code>BlueprintThreadSafe</code></b>: promises this function is safe to call from the anim graph's worker-thread update
+(<a href="05-anim-instances.html">thread-safe update</a>). Without it, the anim graph warns when you call it from a
+thread-safe function.</li>
+</ul>
+
+<h2>Weapon data: each weapon brings its own setup</h2>
+<pre><code>USTRUCT(BlueprintType)
+struct FWarriorWeaponData
+{
+    UPROPERTY(EditDefaultsOnly) TSubclassOf&lt;UWarriorHeroLinkedAnimLayer&gt; WeaponAnimLayerToLink;
+    UPROPERTY(EditDefaultsOnly) UInputMappingContext* WeaponInputMappingContext;           // work in progress
+    UPROPERTY(EditDefaultsOnly, meta=(TitleProperty = "InputTag"))
+    TArray&lt;FWarriorHeroAbilitySet&gt; DefaultWeaponAbilities;                                // work in progress
+};
+// AWarriorHeroWeapon
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) FWarriorWeaponData HeroWeaponData;</code></pre>
+<p>The equip ability reads everything it needs <b>from the weapon</b>: which anim layer to link, which input mapping context to
+add (axe controls), and which abilities to grant while it's held (light/heavy attacks, each with an input tag, using the
+same <code>FWarriorHeroAbilitySet</code> as <a href="12-ability-input.html">last lesson</a>). Add a second weapon later and
+the equip ability doesn't change. Only the data does.</p>
+
+<div class="box yours"><span class="label">Small things in your code</span>
+<ul>
+<li><code>UInputMappingContext* WeaponInputMappingContext;</code> has <b>no <code>= nullptr</code></b>. Your
+<code>FWarriorInputActionConfig</code> does initialise its pointer. Do the same here: a struct created in plain C++ (not
+through reflection) would otherwise hold a garbage address.</li>
+<li>In <code>WarriorGameplayTags.cpp</code>, the two <code>Player_Event</code> definitions end with <code>;</code> and the
+others don't. Harmless (an empty statement), but inconsistent.</li>
+<li>Your uncommitted changes fix the include order and the <code>Unquip</code> typo. Commit them.</li>
+</ul>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Why attach the axe on a gameplay event from the montage, instead of after a delay?</summary>
+<div class="a"><p>The notify sits on the exact frame the hand closes, so it stays in sync if the animation's length or play rate changes. A delay doesn't.</p></div></details>
+<details class="q"><summary>Why send a <i>gameplay event</i> (with a tag) rather than a plain anim notify event?</summary>
+<div class="a"><p>It goes through the ASC by tag, so the notify and the ability don't need to know about each other. One generic notify works for every ability.</p></div></details>
+<details class="q"><summary>Which ability tasks run the equip ability?</summary>
+<div class="a"><p><i>Play Montage and Wait</i> (plays the equip montage) and <i>Wait Gameplay Event</i> (for <code>Player.Event.Equip.Axe</code>).</p></div></details>
+<details class="q"><summary>What's an Animation Layer Interface, and what does <code>LinkAnimClassLayers</code> do?</summary>
+<div class="a"><p>The interface declares layer slots (like Locomotion) that the main graph calls. Linking a layer class fills those slots with its animations (e.g. the axe set) without changing the main graph.</p></div></details>
+<details class="q"><summary>Why does <code>UWarriorHeroLinkedAnimLayer</code> need <code>GetHeroAnimInstance()</code>?</summary>
+<div class="a"><p>A linked layer is a separate anim instance with none of the main instance's variables. The getter fetches the mesh's main instance so the layer can read ground speed and the like.</p></div></details>
+<details class="q"><summary>What does <code>meta = (BlueprintThreadSafe)</code> promise?</summary>
+<div class="a"><p>That the function is safe to call from the anim graph's thread-safe (worker thread) update.</p></div></details>
+<details class="q"><summary>Why store the anim layer, input context and abilities in <code>FWarriorWeaponData</code> on the weapon?</summary>
+<div class="a"><p>The equip ability reads them from whichever weapon it's equipping, so new weapons need only new data, not new ability code.</p></div></details>
+<details class="q"><summary>Why initialise pointer members in a struct with <code>= nullptr</code>?</summary>
+<div class="a"><p>A struct created in plain C++ doesn't zero its members, so the pointer would hold a garbage address. Reflection-created ones happen to be zeroed, but don't rely on it.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

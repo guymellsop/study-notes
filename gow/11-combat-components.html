@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Combat Components · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Combat components: where weapons live</h1>
+<p class="meta">Commits <code>c7f1bc6</code>, <code>fa176d1</code>, <code>ea95f4b</code> · <code>UPawnExtensionComponentBase</code>, <code>UPawnCombatComponent</code>, <code>UHeroCombatComponent</code>, <code>UWarriorHeroGameplayAbility</code> · 10 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Instead of piling weapon code onto the character, it goes in a <b>component</b>. The combat component keeps a
+<b>map from tag to weapon</b> (<code>Player.Weapon.Axe</code> → the axe actor) and remembers which one is equipped.
+Abilities reach it through small helper functions, so an ability can say "get my combat component, get the axe" without
+caring which character it's on.</p>
+</div>
+
+<h2>The component ladder</h2>
+<div class="table-wrap"><table>
+<tr><th>Class</th><th>Adds</th></tr>
+<tr><td><code>UPawnExtensionComponentBase</code></td><td><code>GetOwningPawn&lt;T&gt;()</code> / <code>GetOwningController&lt;T&gt;()</code>: typed access to whoever owns the component</td></tr>
+<tr><td><code>UPawnCombatComponent</code></td><td>The weapon map, register / get / currently equipped. Shared by heroes and enemies</td></tr>
+<tr><td><code>UHeroCombatComponent</code></td><td><code>GetHeroCarriedWeaponByTag</code>: the same lookup, returned as <code>AWarriorHeroWeapon*</code></td></tr>
+</table></div>
+<p><b>Why a component and not more code on the character?</b> Composition: combat logic is reusable on any pawn (enemies
+get a <code>UPawnCombatComponent</code> too), the character class stays small, and abilities can find combat stuff
+without knowing the character's class.</p>
+
+<h2>The extension base: your templates assignment, for real</h2>
+<pre><code>template &lt;class T&gt;
+T* GetOwningPawn() const
+{
+    static_assert(TPointerIsConvertibleFromTo&lt;T, APawn&gt;::Value, "'T' must be derived from APawn");
+    return CastChecked&lt;T&gt;(GetOwner());
+}
+
+APawn* GetOwningPawn() const { return GetOwningPawn&lt;APawn&gt;(); }   // non-template overload</code></pre>
+<ul>
+<li>Everything from the <a href="09-templates.html">templates page</a>, including the <code>static_assert</code>.</li>
+<li><b>Two functions with the same name</b> is an <b>overload</b>: <code>GetOwningPawn()</code> with no angle brackets calls the
+plain version, which just forwards to the template with <code>APawn</code>. A convenience so most callers don't have to type
+<code>&lt;APawn&gt;</code>.</li>
+<li><code>protected</code>: only the component and its subclasses can call these. Outsiders should go through the pawn.</li>
+<li><code>meta=(BlueprintSpawnableComponent)</code>: lets you add it in the Blueprint editor's <i>Add Component</i> list.</li>
+</ul>
+
+<h2>The weapon map</h2>
+<pre><code>private:
+    TMap&lt;FGameplayTag, AWarriorWeaponBase*&gt; CharacterCarriedWeaponMap;
+
+void UPawnCombatComponent::RegisterSpawnedWeapon(FGameplayTag InWeaponTagToRegister,
+        AWarriorWeaponBase* InWeaponToRegister, bool bRegisterAsEquippedWeapon)
+{
+    checkf(!CharacterCarriedWeaponMap.Contains(InWeaponTagToRegister), TEXT("...already added..."));
+    check(InWeaponToRegister);
+    CharacterCarriedWeaponMap.Emplace(InWeaponTagToRegister, InWeaponToRegister);
+    if (bRegisterAsEquippedWeapon) CurrentEquippedWeaponTag = InWeaponTagToRegister;
+}
+
+AWarriorWeaponBase* GetCharacterCarriedWeaponByTag(FGameplayTag InWeaponTagToGet) const
+{
+    return CharacterCarriedWeaponMap.FindRef(InWeaponTagToGet);
+}</code></pre>
+<ul>
+<li><b><code>TMap&lt;Key, Value&gt;</code></b>: a dictionary. Look something up by its key, fast, without looping. A
+<a href="02-gameplay-tags.html">gameplay tag</a> makes a good key: "give me whatever is registered as
+<code>Player.Weapon.Axe</code>".</li>
+<li><b><code>Emplace</code> vs <code>Add</code></b>: <code>Emplace</code> builds the entry in place instead of building it then
+copying it in. With a tag and a pointer the difference is negligible. It's a habit.</li>
+<li><b><code>FindRef</code></b> returns a <b>copy</b> of the value, or a default (here <code>nullptr</code>) if the key isn't
+there. Plain <code>Find</code> returns a <i>pointer to</i> the value inside the map (so here a pointer to a pointer). For a map
+of pointers, <code>FindRef</code> is the simple one.</li>
+<li><b><code>checkf</code> on registering twice</b>: a programming mistake, so crash loudly (<a href="08-cpp-toolkit.html">check vs ensure</a>).</li>
+<li><b>Who calls it?</b> <code>GA_Shared_SpawnWeapon</code> (Blueprint) spawns the axe and calls
+<code>RegisterSpawnedWeapon</code>, which is <code>BlueprintCallable</code> for exactly that reason.</li>
+</ul>
+
+<div class="box warn"><span class="label">Spot it: this map has no UPROPERTY</span>
+<p><code>CharacterCarriedWeaponMap</code> is a <b>raw pointer container with no <code>UPROPERTY()</code></b>, your mock Q3
+again. Why it works today: the weapon is an <b>actor in the level</b>, and the level keeps its actors alive, so the GC
+never collects it out from under you. Where it breaks: when a weapon is <b>destroyed</b> (enemy dies, weapon dropped), a
+<code>UPROPERTY</code> reference would be cleared to <code>nullptr</code> for you. This raw one keeps the old address, a
+<b>dangling pointer</b>. The fix is one line:</p>
+<pre><code>UPROPERTY()
+TMap&lt;FGameplayTag, TObjectPtr&lt;AWarriorWeaponBase&gt;&gt; CharacterCarriedWeaponMap;</code></pre>
+<p>Worth asking your teacher about. "It works because the level owns the actor, but it isn't safe after Destroy" is a
+very good answer.</p>
+</div>
+
+<h2>Helpers on the ability</h2>
+<pre><code>// UWarriorGameplayAbility (any character)
+UPawnCombatComponent* GetPawnCombatComponentFromActorInfo() const
+{
+    return GetAvatarActorFromActorInfo()-&gt;FindComponentByClass&lt;UPawnCombatComponent&gt;();
+}
+
+// UWarriorHeroGameplayAbility (hero only)
+AWarriorHeroCharacter* GetHeroCharacterFromActorInfo()
+{
+    if (!CachedWarriorHeroCharacter.IsValid())
+        CachedWarriorHeroCharacter = Cast&lt;AWarriorHeroCharacter&gt;(CurrentActorInfo-&gt;AvatarActor.Get());
+    return CachedWarriorHeroCharacter.IsValid() ? CachedWarriorHeroCharacter.Get() : nullptr;
+}</code></pre>
+<ul>
+<li><b>"FromActorInfo"</b>: an ability doesn't have a fixed owner variable. It reads who it's running on from its <b>actor
+info</b> (the owner/avatar pair you set with <code>InitAbilityActorInfo</code>, <a href="06-ability-system.html">GAS setup</a>).</li>
+<li><b><code>FindComponentByClass&lt;T&gt;</code></b> searches the actor's components for the first one that <b>is a</b>
+<code>T</code>. A <code>UHeroCombatComponent</code> counts, because it's a subclass. That's why the shared ability works for
+heroes and enemies alike.</li>
+<li><b>Caching in a <code>TWeakObjectPtr</code></b>: cast once, remember it, and reuse it on later calls. <b>Weak</b>, so the
+ability never keeps the character alive, and if the character is destroyed, <code>IsValid()</code> says so instead of
+dangling (<a href="../unreal/garbage-collection.html">GC page</a>).</li>
+<li><b>Why these hero getters aren't <code>const</code>:</b> they <i>write</i> to the cache, so they change the object.
+<code>const</code> would be a compile error. (The C++ escape hatch is marking the cache <code>mutable</code>, which is the
+standard trick for "caching doesn't count as changing".) See <a href="../cpp/pointers-references-const.html">const</a>.</li>
+<li><b><code>BlueprintPure</code></b>: the Blueprint abilities (<code>GA_Hero_EquipAxe</code>) call these as pure nodes, with no
+exec pins.</li>
+</ul>
+
+<div class="box yours"><span class="label">Small things in your code</span>
+<ul>
+<li><code>GetHeroCombatComponentFromActorInfo()</code> calls <code>GetHeroCharacterFromActorInfo()-&gt;</code> without a null
+check, but that getter can return <code>nullptr</code> (e.g. if this ability were ever put on an enemy). Then it's a
+crash.</li>
+<li><code>HeroCombatComponent</code> is in <code>Category = "Camera"</code>: copy-paste from the camera components above it,
+so it shows under Camera in the Details panel.</li>
+<li><code>GetHeroCombatComponent()</code> is a <code>FORCEINLINE</code> getter in a <code>public:</code> section added at
+the end of the class. That's fine. It's why the ability can reach a <code>private</code> component.</li>
+</ul>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Why put weapon tracking in a component instead of on the character?</summary>
+<div class="a"><p>Reusable on any pawn (heroes and enemies), keeps the character class small, and abilities can find it without knowing the character's class.</p></div></details>
+<details class="q"><summary>What's an overload, and why does <code>GetOwningPawn()</code> have one?</summary>
+<div class="a"><p>Two functions with the same name but different forms. The plain <code>GetOwningPawn()</code> forwards to <code>GetOwningPawn&lt;APawn&gt;()</code> so callers who just want an APawn don't type the angle brackets.</p></div></details>
+<details class="q"><summary><code>TMap::FindRef</code> vs <code>TMap::Find</code>?</summary>
+<div class="a"><p><code>FindRef</code> returns a copy of the value (or a default like nullptr if missing). <code>Find</code> returns a pointer to the value stored in the map (or nullptr).</p></div></details>
+<details class="q"><summary>The weapon map has no <code>UPROPERTY</code>. Why does it work today, and when would it break?</summary>
+<div class="a"><p>The level keeps spawned actors alive, so GC won't collect them. But when a weapon is destroyed, a raw pointer isn't cleared, so it dangles. <code>UPROPERTY() TMap&lt;FGameplayTag, TObjectPtr&lt;AWarriorWeaponBase&gt;&gt;</code> fixes it.</p></div></details>
+<details class="q"><summary>Why does <code>FindComponentByClass&lt;UPawnCombatComponent&gt;</code> find the hero's <code>UHeroCombatComponent</code>?</summary>
+<div class="a"><p>It finds the first component that <i>is a</i> UPawnCombatComponent, and subclasses count.</p></div></details>
+<details class="q"><summary>Why cache the hero character in a <code>TWeakObjectPtr</code> rather than a raw pointer?</summary>
+<div class="a"><p>Weak never keeps the character alive and reports when it's gone (<code>IsValid()</code>), instead of leaving a dangling pointer.</p></div></details>
+<details class="q"><summary>Why can't <code>GetHeroCharacterFromActorInfo()</code> be <code>const</code> as written?</summary>
+<div class="a"><p>It writes to the cache member, which changes the object. Marking the cache <code>mutable</code> is the usual way to allow caching inside a const function.</p></div></details>
+<details class="q"><summary>Where does an ability get "who am I running on" from?</summary>
+<div class="a"><p>Its actor info (<code>CurrentActorInfo</code>): avatar actor, owner, player controller and ASC, set up by <code>InitAbilityActorInfo</code>.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

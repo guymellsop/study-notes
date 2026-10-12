@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Ability Input · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Ability input: press a button, activate by tag</h1>
+<p class="meta">Commit <code>403f1fc</code> (+ <code>7a3d5fc</code>) · <code>BindAbilityInputAction</code>, <code>FWarriorHeroAbilitySet</code>, <code>OnAbilityInputPressed</code> · 10 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Every ability button gets an <b>input tag</b>. When abilities are granted, each one is <b>stamped with its input tag</b>.
+When a button is pressed, the ASC <b>looks for abilities stamped with that tag and activates them</b>. The character never
+needs to know which abilities exist. Press E, and whatever ability carries <code>InputTag.EquipAxe</code> runs.</p>
+</div>
+
+<h2>The whole path, one press</h2>
+<ol>
+<li>You press E. Enhanced Input fires <code>IA_EquipAxe</code>, <b>Started</b>.</li>
+<li>The binding calls <code>Input_AbilityInputPressed(InputTag.EquipAxe)</code> on the character, with the <b>tag passed
+along</b>.</li>
+<li>The character forwards it: <code>WarriorAbilitySystemComponent-&gt;OnAbilityInputPressed(Tag)</code>.</li>
+<li>The ASC loops over its granted abilities, finds the one stamped <code>InputTag.EquipAxe</code>, and calls
+<code>TryActivateAbility</code>.</li>
+<li><code>GA_Hero_EquipAxe</code> runs (<a href="13-equip-anim-layers.html">next lesson</a>).</li>
+</ol>
+
+<h2>1. Config: a second list of input actions</h2>
+<pre><code>UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (TitleProperty = "InputTag"))
+TArray&lt;FWarriorInputActionConfig&gt; AbilityInputActions;   // alongside NativeInputActions</code></pre>
+<p><b>Native</b> actions (move, look) are bound one by one to specific C++ functions. <b>Ability</b> actions are all bound the
+same way, to "activate whatever has this tag". That's why they're in a separate list.</p>
+
+<h2>2. Binding with a payload</h2>
+<pre><code>template &lt;class UserObject, typename CallbackFunc&gt;
+void BindAbilityInputAction(const UDataAsset_InputConfig* InInputConfig, UserObject* ContextObject,
+                            CallbackFunc InputPressedFunc, CallbackFunc InputReleasedFunc)
+{
+    for (const FWarriorInputActionConfig&amp; Config : InInputConfig-&gt;AbilityInputActions)
+    {
+        if (!Config.InputAction || !Config.InputTag.IsValid()) continue;
+        BindAction(Config.InputAction, ETriggerEvent::Started,   ContextObject, InputPressedFunc,  Config.InputTag);
+        BindAction(Config.InputAction, ETriggerEvent::Completed, ContextObject, InputReleasedFunc, Config.InputTag);
+    }
+}</code></pre>
+<ul>
+<li><b>The extra argument at the end</b> (<code>Config.InputTag</code>) is a <b>payload</b>. Enhanced Input stores it with the
+binding and <b>passes it to your function</b> every time it fires. That's why <code>Input_AbilityInputPressed</code> takes an
+<code>FGameplayTag</code>: one function handles <i>every</i> ability button, and the tag says which one.</li>
+<li><b><code>Started</code> = pressed, <code>Completed</code> = released.</b> Released does nothing yet; it's there for
+"hold to charge" or "hold to block" abilities later.</li>
+<li><b>One <code>CallbackFunc</code> type for both</b> works because pressed and released have identical signatures. If
+they differed, you'd need two template parameters.</li>
+<li><code>Config.IsValid()</code> (the struct function <a href="../cpp/pointers-references-const.html">from your last
+question</a>) would do the same as the hand-written check in the <code>if</code>.</li>
+</ul>
+
+<h2>3. Granting: stamping the tag onto the ability</h2>
+<pre><code>USTRUCT(BlueprintType)
+struct FWarriorHeroAbilitySet
+{
+    UPROPERTY(EditDefaultsOnly, meta=(categories = "InputTag")) FGameplayTag InputTag;
+    UPROPERTY(EditDefaultsOnly) TSubclassOf&lt;UWarriorGameplayAbility&gt; AbilityToGrant;
+    bool IsValid() const;
+};
+
+void UDataAsset_HeroStartupData::GiveToAbilitySystemComponent(UWarriorAbilitySystemComponent* InASCToGive, int32 ApplyLevel)
+{
+    Super::GiveToAbilitySystemComponent(InASCToGive, ApplyLevel);   // the shared lists first
+    for (const FWarriorHeroAbilitySet&amp; AbilitySet : HeroStartupAbilitySets)
+    {
+        if (!AbilitySet.IsValid()) continue;
+        FGameplayAbilitySpec AbilitySpec(AbilitySet.AbilityToGrant);
+        AbilitySpec.SourceObject = InASCToGive-&gt;GetAvatarActor();
+        AbilitySpec.Level = ApplyLevel;
+        AbilitySpec.GetDynamicSpecSourceTags().AddTag(AbilitySet.InputTag);   // the stamp
+        InASCToGive-&gt;GiveAbility(AbilitySpec);
+    }
+}</code></pre>
+<ul>
+<li><b>This is the <code>virtual</code> override</b> the <a href="10-startup-data.html">startup data</a> page predicted: the hero
+version calls <code>Super::</code> for the shared lists, then adds the hero-only, input-bound abilities.</li>
+<li><b>Dynamic spec source tags</b> are tags on <i>this particular grant</i> of the ability, not on the ability class. The same
+ability class could be granted twice with two different input tags. (Older tutorials call it <code>DynamicAbilityTags</code>;
+UE 5.5+ renamed it.)</li>
+<li>The struct moved into <code>WarriorStructTypes.h</code> in <code>7a3d5fc</code>, a shared home for small data
+types that several classes use, so no class header has to include another just for a struct.</li>
+</ul>
+
+<h2>4. The ASC finds and activates</h2>
+<pre><code>void UWarriorAbilitySystemComponent::OnAbilityInputPressed(const FGameplayTag InInputTag)
+{
+    if (!InInputTag.IsValid()) return;
+    for (const FGameplayAbilitySpec&amp; AbilitySpec : GetActivatableAbilities())
+    {
+        if (!AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InInputTag)) continue;
+        TryActivateAbility(AbilitySpec.Handle);
+    }
+}</code></pre>
+<ul>
+<li><b><code>HasTagExact</code></b>, not <code>HasTag</code>: <code>InputTag.EquipAxe</code> must not also match a parent like
+<code>InputTag</code> (<a href="02-gameplay-tags.html">tags page</a>).</li>
+<li><b><code>const FGameplayTag InInputTag</code></b> by value: a gameplay tag is tiny (one name), so copying is fine.
+<code>const</code> on a <i>value</i> parameter only stops the function from changing its own copy. It's not a promise to the caller.</li>
+<li><b><code>TryActivateAbility</code></b>, "try": activation can fail (on cooldown, blocked by a tag, can't afford the cost), and
+GAS checks all that for you.</li>
+</ul>
+
+<div class="box warn"><span class="label">Worth knowing: changing a list while looping over it</span>
+<p>The loop walks <code>GetActivatableAbilities()</code> and activates abilities inside it. If an activated ability ever
+<b>grants or removes abilities</b> (equipping a weapon that grants its attacks is the obvious one), that's the list you're
+looping over being changed under you, the same family of problem as the <a href="../cpp/containers-move.html">TArray
+reference bug</a>. GAS has internal locking to defer some of this, but Epic's Lyra plays it safe: <b>first collect the
+matching handles into a local array, then activate them</b> in a second loop. A good pattern to recognise.</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Trace one press of E from the keyboard to the ability running.</summary>
+<div class="a"><p>IA_EquipAxe Started → bound callback <code>Input_AbilityInputPressed(InputTag.EquipAxe)</code> → <code>ASC-&gt;OnAbilityInputPressed(tag)</code> → loop finds the spec stamped with that tag → <code>TryActivateAbility</code> → GA_Hero_EquipAxe runs.</p></div></details>
+<details class="q"><summary>What is the payload argument in <code>BindAction(..., InputPressedFunc, Config.InputTag)</code>?</summary>
+<div class="a"><p>An extra value Enhanced Input stores with the binding and passes to the callback each time. It's how one function handles every ability button and still knows which one fired.</p></div></details>
+<details class="q"><summary>Started vs Completed?</summary>
+<div class="a"><p>Started fires once when the input begins (pressed). Completed fires when it ends (released).</p></div></details>
+<details class="q"><summary>What are dynamic spec source tags, and why put the input tag there instead of on the ability class?</summary>
+<div class="a"><p>Tags on one specific grant of an ability. The same ability class could be granted with different input tags.</p></div></details>
+<details class="q"><summary>Why <code>HasTagExact</code> rather than <code>HasTag</code>?</summary>
+<div class="a"><p><code>HasTag</code> also matches parent tags, so a broad tag could activate the wrong ability. Exact matching avoids that.</p></div></details>
+<details class="q"><summary>Why <code>TryActivateAbility</code> and not "ActivateAbility"?</summary>
+<div class="a"><p>Activation can fail (cooldown, cost, blocking tags). GAS checks the rules and only activates if they pass.</p></div></details>
+<details class="q"><summary>What's risky about activating abilities inside a loop over <code>GetActivatableAbilities()</code>, and the safe pattern?</summary>
+<div class="a"><p>An activated ability could grant or remove abilities, changing the list mid-loop. Safer: collect the matching handles first, then activate in a second loop (what Lyra does).</p></div></details>
+<details class="q"><summary>What does <code>const</code> mean on a by-value parameter like <code>const FGameplayTag InInputTag</code>?</summary>
+<div class="a"><p>Only that the function won't modify its own local copy. The caller's tag was copied, so it's never affected either way.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>
