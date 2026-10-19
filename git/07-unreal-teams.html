@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Git in Unreal Teams · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Git</a></nav>
+<main>
+<h1>Git in Unreal teams: binaries, LFS, locking, Perforce</h1>
+<p class="meta">What's different when half the repo is binary assets · 8 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Git was built for text. Unreal projects are mostly <b>binary</b> (<code>.uasset</code>, <code>.umap</code>), which can't be
+merged and are huge. So teams use <b>Git LFS</b> to keep big files out of normal history, <b>lock</b> assets so two people
+never edit the same one, and ignore generated folders. Many studios use <b>Perforce</b> instead, which is built around exactly this.</p>
+</div>
+
+<h2>The problem with binary assets</h2>
+<ul>
+<li><b>Can't merge.</b> Two people edit <code>BP_HeroCharacter</code> and one person's work is lost: git can't combine binary
+files (<a href="03-branches-merge.html">conflicts</a>).</li>
+<li><b>Huge history.</b> Git keeps every version of every file. Twenty versions of a 200 MB texture is 4 GB that every clone downloads.</li>
+<li><b>Diffs are useless.</b> <code>git diff</code> on a <code>.uasset</code> shows nothing readable. (The editor's <i>Diff</i>
+against revision control can compare Blueprints visually.)</li>
+</ul>
+
+<h2>Git LFS (Large File Storage)</h2>
+<p>LFS stores big files <b>on a separate server</b> and puts a tiny text <b>pointer</b> in git history instead. Clone and
+checkout download only the versions you actually need. You already use it: WadOfGore's <code>.gitattributes</code> sends
+<b>951 files</b> through LFS:</p>
+<pre><code>*.uasset  filter=lfs diff=lfs merge=lfs -text
+*.umap    filter=lfs diff=lfs merge=lfs -text
+*.fbx     filter=lfs diff=lfs merge=lfs -text</code></pre>
+<ul>
+<li><code>git lfs ls-files</code> lists what LFS manages.</li>
+<li><b>Set it up before adding assets.</b> Files committed before the <code>.gitattributes</code> rule exists go into normal
+history and stay there.</li>
+<li>GitHub's free LFS quota is small. Big projects pay, or host elsewhere.</li>
+</ul>
+
+<h2>Locking: "I'm editing this, hands off"</h2>
+<pre><code>git lfs lock Content/PlayerCharacter/BP_HeroCharacter.uasset
+git lfs locks                    # who has what locked
+git lfs unlock Content/PlayerCharacter/BP_HeroCharacter.uasset</code></pre>
+<p>With <code>lockable</code> set in <code>.gitattributes</code>, unlocked files are read-only on disk, so you can't edit by
+accident. Unreal's <b>Revision Control</b> integration (bottom-right of the editor) can lock on checkout, which is the habit
+that prevents lost Blueprint work.</p>
+
+<h2>What not to commit</h2>
+<p>Generated folders are rebuilt on each machine and must be in <code>.gitignore</code>:</p>
+<pre><code>Binaries/   Intermediate/   Saved/   DerivedDataCache/   .vs/   *.sln</code></pre>
+<p>Committing them causes constant meaningless conflicts and bloats the repo. (Your <code>.gitignore</code> and the
+"Ignore generated .slnx solution files" commit are exactly this.)</p>
+
+<h2>Line endings: those "LF will be replaced by CRLF" warnings</h2>
+<p>Windows ends lines with CRLF, macOS and Linux with LF. <code>* text=auto</code> in your <code>.gitattributes</code> makes git
+store LF in the repo and convert on checkout, so mixed teams don't get "every line changed" diffs. The warning is just git
+telling you it's doing that. It's harmless.</p>
+
+<h2>Perforce: what many studios use instead</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>Git</th><th>Perforce (Helix Core)</th></tr>
+<tr><td>Model</td><td>Everyone has the full history; sync through a remote</td><td>One central server; you sync only what you need</td></tr>
+<tr><td>Before editing</td><td>Just edit</td><td><b>Check out</b> the file (can lock it exclusively)</td></tr>
+<tr><td>Unit of work</td><td>Commit, then push</td><td><b>Changelist</b>, then <b>submit</b> (straight to the server)</td></tr>
+<tr><td>Branches</td><td>Cheap labels</td><td><b>Streams</b>: heavier, more managed</td></tr>
+<tr><td>Huge binaries</td><td>Needs LFS</td><td>Built for it</td></tr>
+</table></div>
+<p>Epic uses Perforce, and so do most mid-to-large studios. Smaller teams and indies often use git + LFS. The concepts carry
+over: history, review, small changes, lock binaries. Saying that in an interview is a good answer to "have you used Perforce?"
+if you haven't yet.</p>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Why are <code>.uasset</code> files a problem for git?</summary>
+<div class="a"><p>Binary: can't be merged, diffs are unreadable, and every version bloats history for everyone.</p></div></details>
+<details class="q"><summary>What does Git LFS actually store in the repo?</summary>
+<div class="a"><p>A small text pointer. The real file lives on the LFS server and is downloaded only when needed.</p></div></details>
+<details class="q"><summary>Why set up LFS before adding assets?</summary>
+<div class="a"><p>Files committed before the LFS rule exists are stored in normal git history permanently.</p></div></details>
+<details class="q"><summary>What problem does file locking solve?</summary>
+<div class="a"><p>Two people editing the same unmergeable asset, where one person's work would be lost.</p></div></details>
+<details class="q"><summary>Name four folders an Unreal project must not commit.</summary>
+<div class="a"><p>Binaries, Intermediate, Saved, DerivedDataCache (also .vs and generated solution files).</p></div></details>
+<details class="q"><summary>What are the "LF will be replaced by CRLF" warnings?</summary>
+<div class="a"><p>Git normalising line endings because of <code>text=auto</code>: LF in the repo, your OS's style on disk. Harmless.</p></div></details>
+<details class="q"><summary>Perforce terms for "commit" and "branch"?</summary>
+<div class="a"><p>Changelist (submitted to the server) and stream.</p></div></details>
+<details class="q"><summary>"Have you used Perforce?" and you haven't. Good answer?</summary>
+<div class="a"><p>Honest no, then: "I use git with LFS and asset locking, so I know the problems it solves: binary assets, locking, small reviewed changes. The concepts carry over."</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

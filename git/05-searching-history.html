@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Searching with Git · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Git</a></nav>
+<main>
+<h1>Searching: grep, log, blame, bisect</h1>
+<p class="meta">Finding code, and finding <i>when and why</i> it changed · 7 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p><code>git grep</code> searches the code <b>as it is now</b>. <code>git log -S</code> searches <b>history</b> ("which commit
+added this?"). <code>git blame</code> says who last changed each line and in which commit. <code>git bisect</code> finds the
+commit that broke something by binary search.</p>
+</div>
+
+<h2>git grep: search the code</h2>
+<pre><code>git grep "CharacterCarriedWeaponMap"
+git grep -n "UPROPERTY" -- "*.h"         # -n line numbers, only headers
+git grep -i "startupdata"                # -i ignore case</code></pre>
+<ul>
+<li>"grep" is an old Unix tool name ("global regular expression print"): search text for a pattern.</li>
+<li><code>git grep</code> only searches files git <b>tracks</b>, so it skips <code>Binaries/</code>, <code>Intermediate/</code>
+and everything in <code>.gitignore</code>. On an Unreal project that's the difference between instant and minutes.</li>
+<li>Patterns are <b>regular expressions</b>: <code>git grep "Get.*FromActorInfo"</code> finds all the ability helper getters.</li>
+</ul>
+
+<h2>Searching history</h2>
+<div class="table-wrap"><table>
+<tr><th>Question</th><th>Command</th></tr>
+<tr><td>Which commit <b>added or removed</b> this text?</td><td><code>git log -S "CharacterCarriedWeaponMap" --oneline</code></td></tr>
+<tr><td>What happened to <b>this file</b>?</td><td><code>git log --oneline -- Source/WadOfGore/Public/WarriorGameplayTags.h</code></td></tr>
+<tr><td>Commits whose <b>message</b> mentions something</td><td><code>git log --grep "equip" --oneline</code></td></tr>
+<tr><td>Who last changed <b>each line</b>, in which commit?</td><td><code>git blame path/to/file.cpp</code></td></tr>
+<tr><td>What did a commit change?</td><td><code>git show fa176d1</code></td></tr>
+</table></div>
+<p><b>blame</b> is badly named. It's for finding <i>context</i>, not culprits: "this line came from commit X; read X's message
+to learn <i>why</i> it's like this." Rider and Visual Studio show it inline ("annotate").</p>
+
+<h2>git bisect: which commit broke it?</h2>
+<p>The axe worked a week ago and doesn't now, and there are 30 commits in between. Bisect does a <b>binary search</b>:</p>
+<pre><code>git bisect start
+git bisect bad              # the current commit is broken
+git bisect good 5960ce1     # this older one worked
+# git checks out a commit halfway between. Build, test, then tell it:
+git bisect good             # or: git bisect bad
+# ...repeat. About 5 steps for 30 commits. Then:
+git bisect reset            # back to where you were</code></pre>
+<p>Halving each time means 1,000 commits take about 10 tests. This is why <b>small commits that each compile</b> matter: bisect lands on a
+small commit that clearly shows the cause.</p>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary><code>git grep</code> vs searching the folder with a normal search tool, on an Unreal project?</summary>
+<div class="a"><p><code>git grep</code> only searches tracked files, so it skips Binaries, Intermediate and other ignored build output. Much faster, and less noise.</p></div></details>
+<details class="q"><summary>Which command finds the commit that added a particular line of code?</summary>
+<div class="a"><p><code>git log -S "the text"</code> (the "pickaxe"). <code>git blame</code> also shows the last commit to touch each current line.</p></div></details>
+<details class="q"><summary>What is <code>git blame</code> really for?</summary>
+<div class="a"><p>Finding the commit (and its message) behind a line, to understand why it's written that way.</p></div></details>
+<details class="q"><summary>How does <code>git bisect</code> find a bad commit, and roughly how many tests for 1,000 commits?</summary>
+<div class="a"><p>Binary search: test the midpoint, mark good or bad, halve the range. About 10 tests.</p></div></details>
+<details class="q"><summary>Why do small commits that each compile make bisect useful?</summary>
+<div class="a"><p>Bisect needs to build and test each stop, and it lands on one commit. A small commit points straight at the cause; a huge one doesn't.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

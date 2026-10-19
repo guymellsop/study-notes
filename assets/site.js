@@ -30,6 +30,14 @@ const TOPICS = [
   { cat: "unreal", url: "unreal/tick-and-frame.html", title: "Tick controls and frame order" },
   { cat: "unreal", url: "unreal/many-objects.html", title: "2,000 tickers: managers, subsystems, instancing" },
   { cat: "unreal", url: "unreal/blueprint-cpp-boundary.html", title: "The Blueprint / C++ boundary" },
+  // Git
+  { cat: "git", url: "git/01-where-changes-live.html", title: "Where your changes live: add, commit, status, diff" },
+  { cat: "git", url: "git/02-push-pull.html", title: "Sharing: remote, push, pull, fetch, clone" },
+  { cat: "git", url: "git/03-branches-merge.html", title: "Branches, merging and conflicts" },
+  { cat: "git", url: "git/04-pull-requests.html", title: "Pull requests and code review" },
+  { cat: "git", url: "git/05-searching-history.html", title: "Searching: grep, log, blame, bisect" },
+  { cat: "git", url: "git/06-undoing.html", title: "Undoing things safely" },
+  { cat: "git", url: "git/07-unreal-teams.html", title: "Git in Unreal teams: binaries, LFS, locking, Perforce" },
   // Performance
   { cat: "perf", url: "perf/profiling-triage.html", title: "22 fps, 20 minutes: profiling triage" },
   // Portfolio
@@ -44,6 +52,7 @@ const CATEGORIES = {
   gow: "God of War project",
   cpp: "C++",
   unreal: "Unreal internals",
+  git: "Git",
   perf: "Performance",
   portfolio: "Portfolio",
   behavioural: "Interview answers",

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Branches and Merging · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Git</a></nav>
+<main>
+<h1>Branches, merging and conflicts</h1>
+<p class="meta">Working on something without disturbing everyone else · 10 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>A branch is just a <b>label pointing at a commit</b> that moves forward as you commit. Branches let you work on a feature
+without touching <code>main</code>. <b>Merging</b> brings the work back. If both sides changed the same lines, git can't
+choose, and that's a <b>conflict</b> you resolve by hand.</p>
+</div>
+
+<h2>A branch is a sticky note, not a copy</h2>
+<pre><code>A ── B ── C        ← main
+          ╲
+           D ── E  ← feature/unequip-axe   ← HEAD (you are here)</code></pre>
+<ul>
+<li>Making a branch copies nothing. It's a new label on the current commit. That's why it's instant.</li>
+<li><b><code>HEAD</code></b> means "the branch you're on now". When you commit, <i>that</i> label moves forward.</li>
+<li><code>main</code> stays at C, untouched, until you merge.</li>
+</ul>
+
+<h2>The commands</h2>
+<div class="table-wrap"><table>
+<tr><th>Command</th><th>Does</th></tr>
+<tr><td><code>git branch</code></td><td>List branches (<code>*</code> marks the current one)</td></tr>
+<tr><td><code>git switch -c feature/unequip-axe</code></td><td>Create a branch here and move onto it</td></tr>
+<tr><td><code>git switch main</code></td><td>Move to another branch. Your files change to match it</td></tr>
+<tr><td><code>git merge feature/unequip-axe</code></td><td>Bring that branch's commits into the one you're on</td></tr>
+<tr><td><code>git branch -d feature/unequip-axe</code></td><td>Delete the label after merging (the commits stay)</td></tr>
+<tr><td><code>git stash</code> / <code>git stash pop</code></td><td>Put uncommitted changes aside to switch branches, then bring them back</td></tr>
+</table></div>
+<p>Older tutorials use <code>git checkout -b</code> / <code>git checkout main</code>. Same thing. <code>switch</code> is the newer,
+clearer command.</p>
+<p><b>Team naming:</b> <code>feature/…</code>, <code>fix/…</code>, often with your name or a ticket number:
+<code>guy/fix-weapon-map-uproperty</code>.</p>
+
+<h2>Two kinds of merge</h2>
+<h3>Fast-forward: nothing to combine</h3>
+<pre><code>A ── B ── C ── D ── E        ← main, after merging (main just slides forward)</code></pre>
+<p>If <code>main</code> hasn't moved since you branched, git just <b>moves the main label forward</b> to E. No new commit.</p>
+<h3>Merge commit: both sides moved</h3>
+<pre><code>A ── B ── C ── F ────── M    ← main
+          ╲            ╱
+           D ── E ────┘      (M has two parents)</code></pre>
+<p>Someone added F to main meanwhile. Git combines both into a new <b>merge commit</b> M with two parents. Usually automatic,
+<b>unless</b> both sides edited the same lines.</p>
+
+<h2>Conflicts</h2>
+<pre><code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
+=======
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+&gt;&gt;&gt;&gt;&gt;&gt;&gt; feature/unequip-axe</code></pre>
+<ol>
+<li>Top half (<code>HEAD</code>) is <b>your current branch's</b> version; bottom is the <b>incoming</b> branch's.</li>
+<li>Edit the file to what it <i>should</i> be, which may be one side, the other, or a mix, and <b>delete all three marker
+lines</b>.</li>
+<li><code>git add</code> the file to mark it resolved, then <code>git commit</code> to finish the merge.</li>
+<li>Panicking? <code>git merge --abort</code> puts everything back as it was before the merge.</li>
+</ol>
+<p><b>Compile and test after resolving.</b> Git only checks that the text is combined, not that the code still makes sense. Two
+changes can merge cleanly and still break each other.</p>
+<p><b>Binary files (<code>.uasset</code>) can't be merged at all.</b> Git can't combine two edited Blueprints line by line, so you
+must choose one whole file. That's why Unreal teams <b>lock</b> assets (<a href="07-unreal-teams.html">Git in Unreal teams</a>).</p>
+
+<h2>Rebase (recognise it, use carefully)</h2>
+<p><code>git rebase main</code> <b>replays</b> your branch's commits on top of the latest <code>main</code>, instead of a merge
+commit. The history is a straight line, but it <b>rewrites</b> your commits (new hashes). Rule: rebase only commits that are
+<b>only yours</b>. Never rebase a branch others have pulled.</p>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>What is a branch, physically?</summary>
+<div class="a"><p>A movable label pointing at a commit. Creating one copies nothing.</p></div></details>
+<details class="q"><summary>What is <code>HEAD</code>?</summary>
+<div class="a"><p>The branch (and commit) you currently have checked out. New commits move that branch forward.</p></div></details>
+<details class="q"><summary>Fast-forward merge vs merge commit?</summary>
+<div class="a"><p>Fast-forward: the target hasn't moved, so its label just slides forward, no new commit. Merge commit: both sides moved, so a new commit with two parents combines them.</p></div></details>
+<details class="q"><summary>What do the three conflict markers mean, and how do you finish resolving?</summary>
+<div class="a"><p><code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</code> your side, <code>=======</code> divider, <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt; branch</code> their side. Edit to the right result, delete the markers, <code>git add</code>, <code>git commit</code>.</p></div></details>
+<details class="q"><summary>A merge had no conflicts. Is the code fine?</summary>
+<div class="a"><p>Not necessarily. Git only combined text. Compile and test, because changes can merge cleanly and still clash logically.</p></div></details>
+<details class="q"><summary>How do you back out of a merge halfway through?</summary>
+<div class="a"><p><code>git merge --abort</code>.</p></div></details>
+<details class="q"><summary>Why can't two people's edits to the same <code>.uasset</code> be merged?</summary>
+<div class="a"><p>It's a binary file. Git can't combine it line by line, so one whole version must win. Hence asset locking.</p></div></details>
+<details class="q"><summary>What's the golden rule of rebase?</summary>
+<div class="a"><p>Only rebase commits nobody else has. It rewrites them with new hashes.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

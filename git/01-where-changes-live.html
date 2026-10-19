@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Where Changes Live · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Git</a></nav>
+<main>
+<h1>Where your changes live: add, commit, status, diff</h1>
+<p class="meta">The mental model everything else builds on · 9 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>A change moves through <b>four places</b>: your files on disk (<b>working tree</b>) → a "next commit" tray
+(<b>staging area</b>) → your local history (<b>commits</b>) → GitHub (<b>remote</b>). <code>add</code> moves changes onto the
+tray, <code>commit</code> saves the tray as a snapshot, <code>push</code> sends snapshots to GitHub. <code>status</code> and
+<code>diff</code> tell you what's where.</p>
+</div>
+
+<h2>The four places</h2>
+<pre><code> working tree  ──add──▶  staging area  ──commit──▶  local repo  ──push──▶  remote (GitHub)
+ (files on disk)          ("the tray")               (your commits)          (origin)
+       ◀──────────────────────────────── pull ─────────────────────────────────</code></pre>
+<div class="table-wrap"><table>
+<tr><th>Place</th><th>What's there</th><th>Who sees it</th></tr>
+<tr><td><b>Working tree</b></td><td>The files you're editing right now</td><td>Only you, and not saved in git yet</td></tr>
+<tr><td><b>Staging area</b> (a.k.a. the index)</td><td>The changes you've picked for the <i>next</i> commit</td><td>Only you</td></tr>
+<tr><td><b>Local repo</b></td><td>Every commit you've made, in <code>.git/</code></td><td>Only you, until you push</td></tr>
+<tr><td><b>Remote</b> (<code>origin</code>)</td><td>The shared copy, e.g. <code>github.com/guymellsop/WadOfGore</code></td><td>Everyone on the team</td></tr>
+</table></div>
+<p><b>Blueprint analogy:</b> the working tree is your unsaved editor. Staging is ticking which assets go in the save dialog.
+A commit is pressing Save, but every save is kept forever, with a note.</p>
+
+<h2>Why have a staging area at all?</h2>
+<p>So one commit can be <b>one idea</b>. Say you fixed the include order <i>and</i> started the unequip ability. Stage only the
+include fix, commit it ("Put each .cpp's own header first"), then commit the unequip work separately. Each commit can then
+be understood, reviewed, or undone on its own. Teams care a lot about this.</p>
+
+<h2>The commands</h2>
+<div class="table-wrap"><table>
+<tr><th>Command</th><th>Does</th></tr>
+<tr><td><code>git status</code></td><td>What's changed, and what's staged. <b>Run it constantly.</b> It's free.</td></tr>
+<tr><td><code>git add Source/.../WarriorAbilitySystemComponent.cpp</code></td><td>Stage one file</td></tr>
+<tr><td><code>git add -p</code></td><td>Go through changes <b>piece by piece</b> and choose y/n for each. The best way to split work into clean commits.</td></tr>
+<tr><td><code>git add -A</code></td><td>Stage <i>everything</i>. Fast, but check <code>status</code> first so you don't commit junk.</td></tr>
+<tr><td><code>git commit -m "Message"</code></td><td>Save the staged changes as a commit</td></tr>
+<tr><td><code>git diff</code></td><td>Changes <b>not yet staged</b> (working tree vs staging)</td></tr>
+<tr><td><code>git diff --staged</code></td><td>Changes that <b>are</b> staged: exactly what the next commit will contain. Read this before committing.</td></tr>
+<tr><td><code>git diff HEAD~1</code></td><td>Everything changed since one commit ago</td></tr>
+<tr><td><code>git log --oneline</code></td><td>History, one line per commit</td></tr>
+<tr><td><code>git show 5960ce1</code></td><td>What one commit changed</td></tr>
+</table></div>
+<p><b>The trap:</b> plain <code>git diff</code> shows <i>nothing</i> for changes you've already <code>add</code>ed. That's not
+because they're gone. They're staged. Use <code>--staged</code>.</p>
+
+<h2>What a commit actually is</h2>
+<ul>
+<li>A <b>snapshot</b> of the whole project at that moment (git stores it efficiently, only what changed).</li>
+<li>Plus: <b>author</b>, <b>date</b>, <b>message</b>, and a pointer to its <b>parent</b> commit (the one before it).</li>
+<li>Identified by a <b>hash</b> like <code>5960ce1253c5…</code>, usually shortened to the first 7 characters. The hash is
+calculated from the contents, so a commit can never be secretly changed. Change anything and it's a new hash.</li>
+</ul>
+
+<h2>Writing good commit messages</h2>
+<p>Your WadOfGore history already does this well:</p>
+<pre><code>fa176d1 Add weapon registration to pawn combat component
+403f1fc Add ability input binding and hero startup ability sets</code></pre>
+<ul>
+<li><b>Imperative mood</b>: "Add…", "Fix…", not "Added…". Read it as "this commit will <i>add</i>…".</li>
+<li><b>First line short</b> (~50–70 characters). It's what <code>log --oneline</code> and GitHub show.</li>
+<li><b>Body (optional) explains <i>why</i></b>, after a blank line. The diff already shows <i>what</i>.</li>
+<li>Avoid "fixes", "wip", "stuff". Six months later, in a team, nobody (including you) knows what they meant.</li>
+</ul>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Name the four places a change moves through, in order.</summary>
+<div class="a"><p>Working tree → staging area → local repo (commits) → remote.</p></div></details>
+<details class="q"><summary>What's the staging area for?</summary>
+<div class="a"><p>Choosing exactly what goes into the next commit, so each commit is one idea even if you changed several things.</p></div></details>
+<details class="q"><summary>You <code>git add</code> a file and <code>git diff</code> shows nothing. Why, and what shows it?</summary>
+<div class="a"><p>Plain <code>git diff</code> only shows unstaged changes. <code>git diff --staged</code> shows staged ones.</p></div></details>
+<details class="q"><summary>What does <code>git add -p</code> do?</summary>
+<div class="a"><p>Walks through your changes hunk by hunk and lets you stage only some, for splitting work into clean commits.</p></div></details>
+<details class="q"><summary>After <code>git commit</code>, can your team see it?</summary>
+<div class="a"><p>No. It's only in your local repo until you <code>git push</code>.</p></div></details>
+<details class="q"><summary>What is a commit hash, and why can't a commit be quietly edited?</summary>
+<div class="a"><p>An ID calculated from the commit's contents and parent. Changing anything produces a different hash, i.e. a different commit.</p></div></details>
+<details class="q"><summary>Rewrite "fixed stuff with weapons" as a good commit subject.</summary>
+<div class="a"><p>Something like "Fix crash when the equipped weapon is destroyed". Imperative, specific, short.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

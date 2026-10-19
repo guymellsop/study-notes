@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Pull Requests · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Git</a></nav>
+<main>
+<h1>Pull requests and code review</h1>
+<p class="meta">How a team gets your branch into main · 8 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>A pull request (PR) is a <b>GitHub</b> feature, not a git command: "here's my branch, please review it and merge it into
+<code>main</code>". Teammates read the diff, comment, and approve. Automated checks (CI) build and test it, and then it's merged.
+Nobody pushes straight to <code>main</code>.</p>
+</div>
+
+<h2>The workflow, start to finish</h2>
+<ol>
+<li><code>git switch main</code> → <code>git pull</code>: start from the latest.</li>
+<li><code>git switch -c fix/weapon-map-uproperty</code>: your own branch.</li>
+<li>Work, <code>add</code>, <code>commit</code>, in small clear commits.</li>
+<li><code>git push -u origin fix/weapon-map-uproperty</code>. <code>-u</code> remembers the link, so later it's just
+<code>git push</code>.</li>
+<li><b>Open the PR</b> on GitHub (it offers a button after you push), or <code>gh pr create</code> from the terminal.</li>
+<li><b>Review:</b> teammates comment on lines; you answer, push more commits to the same branch, and the PR updates
+itself.</li>
+<li><b>CI</b> (automated build and tests) goes green.</li>
+<li>Approved → <b>merge</b> → delete the branch.</li>
+</ol>
+<p>The name is confusing: you're asking them to <i>pull</i> your branch in. GitLab calls the same thing a <b>merge
+request</b>, which is clearer.</p>
+
+<h2>Three ways GitHub can merge it</h2>
+<div class="table-wrap"><table>
+<tr><th>Button</th><th>Result on main</th><th>Teams pick it when</th></tr>
+<tr><td><b>Create a merge commit</b></td><td>All your commits + a merge commit</td><td>They want the full history of how the work happened</td></tr>
+<tr><td><b>Squash and merge</b></td><td>Your whole branch becomes <b>one</b> commit</td><td>They want one tidy commit per feature (very common)</td></tr>
+<tr><td><b>Rebase and merge</b></td><td>Your commits replayed onto main, no merge commit</td><td>They want a straight-line history</td></tr>
+</table></div>
+<p>It's a team setting. Just follow whatever the repo does.</p>
+
+<h2>Writing a PR people want to review</h2>
+<ul>
+<li><b>Small.</b> 200 lines gets a careful review; 2,000 gets "LGTM" ("looks good to me") and bugs. Split big work into several PRs.</li>
+<li><b>Title</b> like a commit subject. <b>Description</b>: what, <i>why</i>, how you tested it, screenshots or a GIF for anything
+visual (very welcome in games).</li>
+<li><b>Review your own diff first</b> on GitHub's "Files changed" tab. You'll catch half the comments before anyone else does.</li>
+<li><b>Answer every comment</b>: fix it, or explain why not. "Done" is fine. Arguing in comments isn't. Take long
+discussions to a call.</li>
+</ul>
+
+<h2>Reviewing someone else's</h2>
+<ul>
+<li>Comment on the <b>code</b>, not the person: "this pointer can dangle if…" not "you forgot…".</li>
+<li>Ask questions when unsure: "Is there a reason this isn't a UPROPERTY?" You might learn something.</li>
+<li>Mark nitpicks as nitpicks ("nit: typo in category name") so they don't block the merge.</li>
+</ul>
+
+<div class="box say"><span class="label">Interview tie-in</span>
+<p>"How do you verify your work?" (your mock Q2) and "how do you take feedback?" both have a PR answer: "I review my own diff
+before asking anyone, keep PRs small enough to review properly, and treat review comments as free bug-finding." You already
+end each plugin Part with a whole-branch review and fix the findings in their own commits. That's the same habit.</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Is a pull request a git feature?</summary>
+<div class="a"><p>No. It's a hosting-site feature (GitHub; GitLab calls it a merge request) built on top of branches.</p></div></details>
+<details class="q"><summary>List the steps from "start a fix" to "it's in main".</summary>
+<div class="a"><p>Pull main → new branch → commits → push the branch → open PR → review and fixes → CI passes → merge → delete branch.</p></div></details>
+<details class="q"><summary>Reviewer asks for a change. Do you open a new PR?</summary>
+<div class="a"><p>No. Commit to the same branch and push, and the PR updates automatically.</p></div></details>
+<details class="q"><summary>Squash and merge: what does main end up with?</summary>
+<div class="a"><p>One single commit containing the whole branch's changes.</p></div></details>
+<details class="q"><summary>Why keep PRs small?</summary>
+<div class="a"><p>Small diffs get careful reviews. Huge ones get skimmed and approved with bugs in them.</p></div></details>
+<details class="q"><summary>What does <code>-u</code> do in <code>git push -u origin my-branch</code>?</summary>
+<div class="a"><p>Sets the upstream link, so later plain <code>git push</code> / <code>git pull</code> on that branch know where to go.</p></div></details>
+<details class="q"><summary>What should a PR description include?</summary>
+<div class="a"><p>What changed, why, how it was tested, and screenshots or GIFs for anything visual.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

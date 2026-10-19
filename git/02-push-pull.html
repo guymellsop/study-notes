@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Push and Pull · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Git</a></nav>
+<main>
+<h1>Sharing: remote, push, pull, fetch, clone</h1>
+<p class="meta">How your commits reach the team, and theirs reach you · 7 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Everyone has a <b>full copy</b> of the repo. The <b>remote</b> (GitHub, called <code>origin</code>) is just the copy
+everyone agrees to share through. <code>push</code> sends your new commits up. <code>pull</code> brings others' commits
+down and <b>merges</b> them into your branch. Git refuses a push if the remote has commits you don't have yet, so you pull first.</p>
+</div>
+
+<h2>The words</h2>
+<div class="table-wrap"><table>
+<tr><th>Term</th><th>Means</th></tr>
+<tr><td><b>remote</b></td><td>Another copy of the repo you exchange commits with. Yours: <code>origin → github.com/guymellsop/WadOfGore</code> (<code>git remote -v</code>)</td></tr>
+<tr><td><code>origin/main</code></td><td>Your repo's <b>memory</b> of where <code>main</code> was on GitHub the last time you talked to it. It's not live.</td></tr>
+<tr><td><code>git clone URL</code></td><td>Download a repo for the first time (a full copy, all history)</td></tr>
+<tr><td><code>git fetch</code></td><td>Download new commits from the remote and update <code>origin/main</code>, but <b>don't touch your files</b></td></tr>
+<tr><td><code>git pull</code></td><td><code>fetch</code> <b>+</b> <code>merge</code>: download, then fold them into your current branch</td></tr>
+<tr><td><code>git push</code></td><td>Upload your new commits to the remote</td></tr>
+</table></div>
+
+<h2>Why a push gets rejected</h2>
+<pre><code>! [rejected]        main -&gt; main (fetch first)
+hint: Updates were rejected because the remote contains work that you do not have locally.</code></pre>
+<p>A teammate pushed while you were working. Your history and GitHub's have <b>split</b>:</p>
+<pre><code>          A ── B ── C        (GitHub: teammate pushed C)
+                ╲
+                 D           (you: committed D on top of B)</code></pre>
+<p>If git accepted your push, C would be thrown away. So it refuses. You <code>git pull</code> (bringing C in and merging it
+with D), fix any conflicts, and push again.</p>
+<p><b>Habit:</b> pull before you start work, and pull before you push.</p>
+
+<div class="box warn"><span class="label">Never on a shared branch: git push --force</span>
+<p><code>--force</code> makes the remote match you <b>by deleting whatever you don't have</b>. That's commit C, your
+teammate's work, gone from GitHub. On your own branch it's sometimes legitimate; on <code>main</code> it's how teams lose a day.
+If you must, use <code>--force-with-lease</code>, which refuses if someone else pushed in the meantime.</p>
+</div>
+
+<h2>fetch vs pull</h2>
+<p><code>fetch</code> is "look, don't touch". It's safe any time, and then <code>git log origin/main</code> shows what your teammates
+did before you decide to merge it. <code>pull</code> is "fetch and merge straight away". Most days pull is fine. When you're in the middle of
+something delicate, fetch first and look.</p>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>What is <code>origin</code>?</summary>
+<div class="a"><p>The default name for the remote you cloned from (here, the GitHub repo).</p></div></details>
+<details class="q"><summary><code>git pull</code> is two commands in one. Which?</summary>
+<div class="a"><p><code>git fetch</code> then <code>git merge</code> (of the fetched branch into yours).</p></div></details>
+<details class="q"><summary>Does <code>git fetch</code> change your files?</summary>
+<div class="a"><p>No. It downloads commits and updates <code>origin/main</code>, and leaves your branch and files alone.</p></div></details>
+<details class="q"><summary>Your push is rejected with "fetch first". What happened and what do you do?</summary>
+<div class="a"><p>Someone pushed commits you don't have. Pull (fetch + merge), resolve any conflicts, then push again.</p></div></details>
+<details class="q"><summary>Why is <code>git push --force</code> on <code>main</code> dangerous?</summary>
+<div class="a"><p>It overwrites the remote with your history, deleting any commits others pushed that you don't have.</p></div></details>
+<details class="q"><summary>Is <code>origin/main</code> always what's on GitHub right now?</summary>
+<div class="a"><p>No. It's what was there at your last fetch or pull.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

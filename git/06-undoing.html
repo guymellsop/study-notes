@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Undoing Things · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Git</a></nav>
+<main>
+<h1>Undoing things safely</h1>
+<p class="meta">Pick the undo that matches <i>where</i> the mistake is · 7 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>The right undo depends on <b>how far the change got</b> (<a href="01-where-changes-live.html">the four places</a>). Before
+pushing, you can rewrite freely. <b>After pushing, don't rewrite. Add a new commit that reverses it</b> (<code>revert</code>).
+And almost nothing committed is ever truly lost: <code>reflog</code> remembers.</p>
+</div>
+
+<h2>Match the undo to the place</h2>
+<div class="table-wrap"><table>
+<tr><th>Mistake is in…</th><th>Undo</th><th>Effect</th></tr>
+<tr><td>Working tree (unsaved-to-git edit)</td><td><code>git restore File.cpp</code></td><td>Throws the edit away. <b>Can't be undone</b>, so be sure</td></tr>
+<tr><td>Staging (added by mistake)</td><td><code>git restore --staged File.cpp</code></td><td>Unstages it; your edit stays in the file</td></tr>
+<tr><td>Last commit, <b>not pushed</b></td><td><code>git commit --amend</code></td><td>Fix the message or add forgotten files to it</td></tr>
+<tr><td>Recent commits, <b>not pushed</b></td><td><code>git reset HEAD~1</code></td><td>Un-commits, keeping the changes in your files</td></tr>
+<tr><td>A commit that's <b>already pushed</b></td><td><code>git revert abc1234</code></td><td>Makes a <b>new</b> commit that does the opposite. History stays intact. <b>The team-safe one.</b></td></tr>
+</table></div>
+
+<h2>revert vs reset: the one that matters in a team</h2>
+<ul>
+<li><b><code>reset</code></b> moves your branch label <b>backwards</b>, erasing commits from history. If teammates already pulled
+them, your histories no longer match, and pushing needs <code>--force</code>
+(<a href="02-push-pull.html">never on shared branches</a>).</li>
+<li><b><code>revert</code></b> moves <b>forward</b>: a new commit that undoes the old one. Everyone just pulls it. Nothing is
+rewritten.</li>
+</ul>
+<p><b>Rule:</b> pushed means revert. Only yours and unpushed means amend or reset are fine.</p>
+
+<div class="box warn"><span class="label">The dangerous one</span>
+<p><code>git reset --hard</code> resets the branch <b>and wipes uncommitted changes in your files</b>. Committed work is
+recoverable (see below); uncommitted work is not. Run <code>git status</code> first, or <code>git stash</code> to keep things
+safe.</p>
+</div>
+
+<h2>The safety net: reflog</h2>
+<pre><code>git reflog
+7a3d5fc HEAD@{0}: reset: moving to HEAD~2
+9f12ab3 HEAD@{1}: commit: Add unequip axe ability      ← "lost" commit, still here
+...
+git switch -c rescue 9f12ab3                            # get it back on a branch</code></pre>
+<p>The reflog records every place <code>HEAD</code> has been, locally, for about 90 days. A bad reset or a deleted branch is
+almost always recoverable from it.</p>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>You staged a file by mistake. Undo without losing the edit?</summary>
+<div class="a"><p><code>git restore --staged File</code>.</p></div></details>
+<details class="q"><summary>Typo in your last commit message, not pushed yet. Fix?</summary>
+<div class="a"><p><code>git commit --amend</code>.</p></div></details>
+<details class="q"><summary>A commit that broke the build is already on GitHub's main. Undo how?</summary>
+<div class="a"><p><code>git revert &lt;hash&gt;</code>: a new commit reversing it. Push that. Don't reset shared history.</p></div></details>
+<details class="q"><summary>revert vs reset, in one line each?</summary>
+<div class="a"><p>Revert adds a new opposite commit (safe after pushing). Reset moves the branch back, erasing commits (only for unpushed work).</p></div></details>
+<details class="q"><summary>What can <code>git reset --hard</code> destroy permanently?</summary>
+<div class="a"><p>Uncommitted changes in your working tree. Committed work can still be recovered via the reflog.</p></div></details>
+<details class="q"><summary>You reset away a commit and regret it. Where do you find it?</summary>
+<div class="a"><p><code>git reflog</code>. Then branch or reset back to its hash.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>
