@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Weapon Abilities · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Weapon abilities: grant on equip, remove on unequip</h1>
+<p class="meta">Commits <code>7629966</code>, <code>02ab227</code> + work in progress · <code>GrantHeroWeaponAbilities</code>, <code>RemoveGrantedHeroWeaponAbilities</code>, <code>AWarriorHeroWeapon::GrantedAbilitySpecHandles</code> · 9 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>When you equip the axe, its attack abilities are <b>granted</b> (each with its input tag), and the <b>handles</b> GAS gives
+back are <b>stored on the weapon</b>. When you unequip, those exact handles are used to <b>remove</b> them. The axe's
+attacks only exist while the axe is in your hand. Handles are the receipts that let you undo precisely what you did.</p>
+</div>
+
+<h2>The round trip</h2>
+<ol>
+<li><b>Equip</b> (<code>GA_Hero_EquipAxe</code>): read <code>HeroWeaponData.DefaultWeaponAbilities</code> from the axe →
+<code>GrantHeroWeaponAbilities</code> → get back a list of handles → <code>AssignGrantedAbilitySpecHandles</code> stores
+them on the axe.</li>
+<li>While equipped, pressing an attack button finds those abilities by input tag (<a href="12-ability-input.html">ability
+input</a>).</li>
+<li><b>Unequip</b> (<code>GA_Hero_UnequipAxe</code>): <code>GetGrantAbilitySpecHandles</code> from the axe →
+<code>RemoveGrantedHeroWeaponAbilities</code> clears each one and empties the list.</li>
+</ol>
+
+<h2>Granting, and getting handles back</h2>
+<pre><code>UFUNCTION(BlueprintCallable, Category="Warrior|Ability", meta = (ApplyLevel = 1))
+void GrantHeroWeaponAbilities(const TArray&lt;FWarriorHeroAbilitySet&gt;&amp; InDefaultWeaponAbilities,
+                              int32 ApplyLevel,
+                              TArray&lt;FGameplayAbilitySpecHandle&gt;&amp; OutgrantedAbilitySpecHandles);
+
+// body: same spec-building loop as the startup data, plus:
+OutgrantedAbilitySpecHandles.AddUnique(GiveAbility(AbilitySpec));</code></pre>
+<ul>
+<li><b><code>GiveAbility</code> returns a handle</b>, the ID of that one grant. Startup abilities ignored it because they're
+never removed. Weapon abilities must be removed later, so this time you <b>keep</b> it.</li>
+<li><b>Why handles, not ability classes?</b> "Remove the light attack class" is ambiguous if two things granted it. A
+handle identifies <i>this exact grant</i>.</li>
+<li><b><code>meta = (ApplyLevel = 1)</code></b>: a <b>default value for the Blueprint pin</b>. Blueprint reads metadata named
+after a parameter as that pin's default. (A C++ default, <code>int32 ApplyLevel = 1</code>, also works and helps C++ callers too.)</li>
+</ul>
+
+<h2>Out parameters and <code>UPARAM(ref)</code>: how references become Blueprint pins</h2>
+<p>This is the <a href="../cpp/pointers-references-const.html">references page</a> in action. A <code>UFUNCTION</code>'s
+reference parameters turn into different pins depending on <code>const</code>:</p>
+<div class="table-wrap"><table>
+<tr><th>C++ parameter</th><th>Blueprint pin</th><th>Used here for</th></tr>
+<tr><td><code>const TArray&lt;…&gt;&amp; In…</code></td><td><b>Input</b> (read-only)</td><td>The abilities to grant</td></tr>
+<tr><td><code>TArray&lt;…&gt;&amp; Out…</code> (non-const)</td><td><b>Output</b> pin, on the right side</td><td>The handles you get back</td></tr>
+<tr><td><code>UPARAM(ref) TArray&lt;…&gt;&amp; In…</code></td><td><b>Input</b>, passed by reference, so changes reach the caller's variable</td><td>The handles to remove, then emptied</td></tr>
+</table></div>
+<p>Without <code>UPARAM(ref)</code>, Blueprint would treat the remove function's array as an <i>output</i>, and you couldn't
+plug the weapon's handles in. With it, <code>InSpecHandlesToRemove.Empty()</code> empties the array you actually passed
+in. Unreal's naming convention helps you read these: <b><code>In</code></b> prefix for inputs, <b><code>Out</code></b> for
+outputs.</p>
+
+<h2>Removing</h2>
+<pre><code>void UWarriorAbilitySystemComponent::RemoveGrantedHeroWeaponAbilities(
+        UPARAM(ref) TArray&lt;FGameplayAbilitySpecHandle&gt;&amp; InSpecHandlesToRemove)
+{
+    if (InSpecHandlesToRemove.IsEmpty()) return;
+    for (const FGameplayAbilitySpecHandle&amp; SpecHandle : InSpecHandlesToRemove)
+        if (SpecHandle.IsValid()) ClearAbility(SpecHandle);
+    InSpecHandlesToRemove.Empty();
+}</code></pre>
+<ul>
+<li><b><code>ClearAbility(Handle)</code></b>: the same call the <code>OnGiven</code> policy uses to remove one-shot
+abilities (<a href="07-abilities-weapons.html">activation policy</a>).</li>
+<li><b>Empty after the loop</b>, not during. The loop only reads the array, so it's safe; changing an array <i>while</i>
+looping over it is the <a href="../cpp/containers-move.html">TArray trap</a>.</li>
+<li><b>Emptying matters:</b> stale handles left on the weapon would be "removed" again on the next unequip. That's harmless
+here thanks to the <code>IsValid</code> check, but untidy.</li>
+</ul>
+
+<h3>Does this hit the "list changes while looping" issue from the input lesson?</h3>
+<p>On the <a href="12-ability-input.html">ability input</a> page I flagged that <code>OnAbilityInputPressed</code> loops over
+the ability list while activating, and granting abilities <i>changes</i> that list. In your case it's fine: the equip ability
+grants the weapon abilities <b>after the montage's gameplay event</b>, a later frame, long after the input loop has
+finished. If a future ability granted something <i>immediately</i> on activation, that's when to collect handles first.</p>
+
+<h2>The T-pose fix (Blueprint, from your commit message)</h2>
+<p>Unequipping <b>unlinks</b> the axe anim layer. The main anim BP then falls back to its <b>own default implementation</b> of
+each layer. If that default is <b>empty</b>, there's no pose at all, and an empty pose is the skeleton's reference pose:
+<b>T-pose</b>. The fix: give <code>ABP_HeroCharacter</code>'s default <code>ArmedLocomotionState</code> layer an unarmed pose
+so there's always something to fall back to. General rule: <b>every layer slot needs a sensible default</b>, because "no
+layer linked" is a real state.</p>
+
+<div class="box yours"><span class="label">Small things in your code</span>
+<ul>
+<li><b>Two spellings of the same thing:</b> this function uses <code>AbilitySpec.DynamicAbilityTags.AddTag(...)</code>, while
+the hero startup data uses <code>GetDynamicSpecSourceTags().AddTag(...)</code>. In UE 5.5+ <code>DynamicAbilityTags</code>
+is <b>deprecated</b> (look for a deprecation warning in your build output). Use the getter in both places so they can't
+drift apart.</li>
+<li><b>The spec-building loop now exists twice</b> (startup data and here). A small shared helper, e.g. one function that
+builds and gives a spec from an <code>FWarriorHeroAbilitySet</code>, would keep them identical. The deprecation above is
+exactly the kind of drift that duplication causes.</li>
+<li><code>GetGrantAbilitySpecHandles</code> is missing a <code>"ed"</code> (Grant<b>ed</b>), and has a space before
+<code>()</code>.</li>
+<li><code>AddUnique</code> is redundant (every new grant has a new handle), so <code>Add</code> is fine. Harmless.</li>
+</ul>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Why store the handles from <code>GiveAbility</code> on the weapon?</summary>
+<div class="a"><p>To remove exactly those grants on unequip. The handle identifies one specific grant.</p></div></details>
+<details class="q"><summary>Why remove by handle rather than by ability class?</summary>
+<div class="a"><p>The same class could be granted by more than one source. A handle is unambiguous.</p></div></details>
+<details class="q"><summary>In a <code>UFUNCTION</code>, what pin does a non-const <code>TArray&lt;…&gt;&amp;</code> parameter become?</summary>
+<div class="a"><p>An output pin.</p></div></details>
+<details class="q"><summary>What does <code>UPARAM(ref)</code> do?</summary>
+<div class="a"><p>Makes a non-const reference parameter an input pin passed by reference, so the function can modify the caller's variable.</p></div></details>
+<details class="q"><summary>What does <code>meta = (ApplyLevel = 1)</code> do?</summary>
+<div class="a"><p>Gives the Blueprint pin for the <code>ApplyLevel</code> parameter a default value of 1.</p></div></details>
+<details class="q"><summary>Why <code>Empty()</code> the array after the loop instead of removing elements during it?</summary>
+<div class="a"><p>Modifying an array while looping over it is unsafe. Read everything first, then clear.</p></div></details>
+<details class="q"><summary>Why did unequipping cause a T-pose?</summary>
+<div class="a"><p>Unlinking the axe layer fell back to the main anim BP's default layer, which was empty, so no pose meant the reference (T) pose. The fix is a real default pose in that layer.</p></div></details>
+<details class="q"><summary><code>DynamicAbilityTags</code> vs <code>GetDynamicSpecSourceTags()</code>?</summary>
+<div class="a"><p>Same purpose. <code>DynamicAbilityTags</code> is deprecated in UE 5.5+; use the getter.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

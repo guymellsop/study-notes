@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Perforce Refresher · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Git</a></nav>
+<main>
+<h1>Perforce refresher</h1>
+<p class="meta">What most studios use, mapped onto the git you know · 9 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Perforce (Helix Core) is <b>centralised</b>: one server holds the history, and your <b>workspace</b> syncs the files you
+map. You <b>check out</b> a file before editing (which can lock it), group edits in a <b>changelist</b>, and <b>submit</b>
+straight to the server. There's no local commit and no push. <b>Shelving</b> shares work without submitting it. <b>Streams</b>
+are its branches.</p>
+</div>
+
+<h2>The vocabulary</h2>
+<div class="table-wrap"><table>
+<tr><th>Perforce</th><th>Means</th></tr>
+<tr><td><b>Depot</b></td><td>The repository on the server, e.g. <code>//WadOfGore/main/...</code></td></tr>
+<tr><td><b>Workspace</b> (client)</td><td>Your local folder <b>plus a mapping</b> of which depot paths it contains. You can map only part of a huge depot</td></tr>
+<tr><td><b>Sync</b> / Get Latest</td><td>Download the latest (or a specific) version of the files you map</td></tr>
+<tr><td><b>Check out</b> (<code>p4 edit</code>)</td><td>Tell the server "I'm editing this". Makes the file writable, and others see it's checked out</td></tr>
+<tr><td><b>Exclusive checkout</b> (<code>+l</code> file type)</td><td>Only one person at a time. Standard for <code>.uasset</code>/<code>.umap</code></td></tr>
+<tr><td><b>Mark for add / delete</b></td><td>New or removed files, which also go in a changelist</td></tr>
+<tr><td><b>Changelist</b> (CL)</td><td>A group of file changes plus a description. The <b>default</b> changelist, or numbered ones you create to separate work</td></tr>
+<tr><td><b>Submit</b></td><td>Send the changelist to the server. It's now history, with a CL number, for everyone</td></tr>
+<tr><td><b>Shelve</b></td><td>Upload a changelist to the server <b>without submitting</b>. Used for code review, handing work to someone, or backup</td></tr>
+<tr><td><b>Resolve</b></td><td>Merge your version with a newer one someone submitted (the conflict step)</td></tr>
+<tr><td><b>Streams</b></td><td>Managed branches: mainline, development, release. Changes <b>merge down</b> (from more stable) and <b>copy up</b> (to more stable)</td></tr>
+<tr><td><b>P4V</b></td><td>The desktop app. <code>p4</code> is the command line</td></tr>
+</table></div>
+
+<h2>Git ↔ Perforce translation</h2>
+<div class="table-wrap"><table>
+<tr><th>Git</th><th>Perforce</th><th>Watch out</th></tr>
+<tr><td><code>clone</code> / <code>pull</code></td><td>Create workspace / <b>Sync</b></td><td>You can sync only some paths, or an older revision</td></tr>
+<tr><td>Just edit</td><td><b>Check out</b> first</td><td>Editing without checkout: the file is read-only, or the server doesn't know you changed it</td></tr>
+<tr><td>Staging + commit</td><td>Changelist</td><td></td></tr>
+<tr><td><code>push</code></td><td><b>Submit</b></td><td>Commit and push are one step. Submit means everyone has it now</td></tr>
+<tr><td>Commit hash</td><td><b>CL number</b></td><td>Increasing numbers: CL 48213 is after 48212</td></tr>
+<tr><td>Branch</td><td>Stream</td><td>Much heavier than a git branch; not made casually</td></tr>
+<tr><td><code>stash</code> / PR branch</td><td><b>Shelve</b></td><td>Reviews (Helix Swarm) are usually done on shelved CLs</td></tr>
+<tr><td><code>restore</code> (discard edits)</td><td><b>Revert</b></td><td><b>Same word, different meaning!</b> See below</td></tr>
+<tr><td><code>revert</code> (undo a commit)</td><td><b>Back out</b> / undo a submitted CL</td><td></td></tr>
+<tr><td>Git LFS lock</td><td>Exclusive checkout</td><td>Built in, not an add-on</td></tr>
+<tr><td><code>.gitignore</code></td><td><code>.p4ignore</code> (and the workspace mapping)</td><td></td></tr>
+</table></div>
+
+<div class="box warn"><span class="label">The classic mix-up: "revert"</span>
+<p>In <b>Perforce</b>, <b>Revert</b> means "<b>throw away my local changes</b> to this file and undo the checkout". In
+<b>git</b>, <code>revert</code> means "make a new commit that undoes an old commit". A git user who reverts in P4V
+expecting the git meaning loses their edits.</p>
+</div>
+
+<h2>A normal day in Perforce</h2>
+<ol>
+<li><b>Get Latest</b> (sync) before starting.</li>
+<li><b>Check out</b> the files you'll touch. For assets, Unreal does this for you if Revision Control is connected (it asks,
+or auto-checks out on modify).</li>
+<li>Keep separate tasks in <b>separate numbered changelists</b>, not everything in the default one.</li>
+<li><b>Shelve</b> for review if the team reviews (Swarm), then address comments.</li>
+<li>Sync again, <b>resolve</b> anything newer, build, then <b>Submit</b> with a clear description.</li>
+<li>Don't leave files checked out overnight that others need, especially exclusive ones. Teams notice.</li>
+</ol>
+
+<h2>Perforce + Unreal specifically</h2>
+<ul>
+<li><b>Revision Control in the editor</b> (bottom-right of the editor): connect to Perforce, and the Content Browser shows
+checkout status icons. Saving an asset prompts to check it out.</li>
+<li><b>Exclusive checkout on binary assets</b> (typemap <code>binary+l</code> for <code>.uasset</code>/<code>.umap</code>) is
+why Perforce is the studio default: two people can never edit the same Blueprint.</li>
+<li><b>Unreal Game Sync (UGS)</b>: Epic's tool for syncing to a CL that's known to build, often with precompiled
+binaries, so artists don't compile C++.</li>
+<li><b>Typemap</b>: server-side rules for file types (binary, exclusive lock, how many old revisions to keep).</li>
+</ul>
+
+<div class="box say"><span class="label">In an interview</span>
+<p>"Have you used Perforce?" → "Yes, on [project]: check out, changelists, submitting, with exclusive checkout on
+assets. These days I mostly use git with LFS and locking, so I'm comfortable with both models: centralised with locking for
+binary-heavy work, and branches with pull requests for code." Name the project and what you actually did in it. Specifics
+are what make the answer believable.</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>What's a workspace, and why does it have a mapping?</summary>
+<div class="a"><p>Your local folder plus the list of depot paths it contains, so you can sync only the parts of a huge depot you need.</p></div></details>
+<details class="q"><summary>Git's commit + push is what single step in Perforce?</summary>
+<div class="a"><p>Submit (a changelist).</p></div></details>
+<details class="q"><summary>What does Revert mean in Perforce, and why is it dangerous for git users?</summary>
+<div class="a"><p>It discards your local changes and undoes the checkout. Git's revert creates an undo commit, so the same word could cost you your edits.</p></div></details>
+<details class="q"><summary>What's shelving for?</summary>
+<div class="a"><p>Storing a changelist on the server without submitting it, for code review, handing work over, or backup.</p></div></details>
+<details class="q"><summary>Why do studios use exclusive checkout for <code>.uasset</code>?</summary>
+<div class="a"><p>Binary assets can't be merged, so only one person may edit one at a time.</p></div></details>
+<details class="q"><summary>Streams: what do "merge down" and "copy up" mean?</summary>
+<div class="a"><p>Merge down: bring changes from a more stable stream into a less stable one. Copy up: promote finished work to a more stable stream.</p></div></details>
+<details class="q"><summary>What's Unreal Game Sync for?</summary>
+<div class="a"><p>Syncing to a changelist known to build, often with precompiled binaries, so non-programmers can work without compiling.</p></div></details>
+<details class="q"><summary>Why use separate numbered changelists?</summary>
+<div class="a"><p>To keep unrelated work apart, so each submit (and its review) is one coherent change, like one-idea git commits.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

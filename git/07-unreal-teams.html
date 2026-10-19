@@ -71,8 +71,8 @@ telling you it's doing that. It's harmless.</p>
 <tr><td>Huge binaries</td><td>Needs LFS</td><td>Built for it</td></tr>
 </table></div>
 <p>Epic uses Perforce, and so do most mid-to-large studios. Smaller teams and indies often use git + LFS. The concepts carry
-over: history, review, small changes, lock binaries. Saying that in an interview is a good answer to "have you used Perforce?"
-if you haven't yet.</p>
+over: history, review, small changes, lock binaries. You've used both, which is worth saying in an interview. The full
+refresher and a model answer are on the <a href="08-perforce.html">Perforce page</a>.</p>
 
 <section class="quiz">
 <h2>Quiz yourself</h2>
@@ -90,8 +90,8 @@ if you haven't yet.</p>
 <div class="a"><p>Git normalising line endings because of <code>text=auto</code>: LF in the repo, your OS's style on disk. Harmless.</p></div></details>
 <details class="q"><summary>Perforce terms for "commit" and "branch"?</summary>
 <div class="a"><p>Changelist (submitted to the server) and stream.</p></div></details>
-<details class="q"><summary>"Have you used Perforce?" and you haven't. Good answer?</summary>
-<div class="a"><p>Honest no, then: "I use git with LFS and asset locking, so I know the problems it solves: binary assets, locking, small reviewed changes. The concepts carry over."</p></div></details>
+<details class="q"><summary>Why do most studios pick Perforce over git for Unreal projects?</summary>
+<div class="a"><p>It's built for huge binary assets: exclusive checkout (locking) is native, you can sync only part of a giant depot, and there's no every-version-on-every-machine history like git without LFS.</p></div></details>
 </section>
 
 <div class="page-end"></div>

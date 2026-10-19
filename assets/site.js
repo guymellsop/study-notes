@@ -18,6 +18,7 @@ const TOPICS = [
   { cat: "gow", url: "gow/11-combat-components.html", title: "Combat components: where weapons live" },
   { cat: "gow", url: "gow/12-ability-input.html", title: "Ability input: press a button, activate by tag" },
   { cat: "gow", url: "gow/13-equip-anim-layers.html", title: "Equip and unequip: montages, events, anim layers" },
+  { cat: "gow", url: "gow/14-weapon-abilities.html", title: "Weapon abilities: grant on equip, remove on unequip" },
   // C++
   { cat: "cpp", url: "cpp/pointers-references-const.html", title: "Values, references, pointers, const, structs" },
   { cat: "cpp", url: "cpp/containers-move.html", title: "Containers move: the TArray reference bug" },
@@ -38,6 +39,7 @@ const TOPICS = [
   { cat: "git", url: "git/05-searching-history.html", title: "Searching: grep, log, blame, bisect" },
   { cat: "git", url: "git/06-undoing.html", title: "Undoing things safely" },
   { cat: "git", url: "git/07-unreal-teams.html", title: "Git in Unreal teams: binaries, LFS, locking, Perforce" },
+  { cat: "git", url: "git/08-perforce.html", title: "Perforce refresher" },
   // Performance
   { cat: "perf", url: "perf/profiling-triage.html", title: "22 fps, 20 minutes: profiling triage" },
   // Portfolio
