@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Instancing Policy · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">God of War project</a></nav>
+<main>
+<h1>Ability instancing policy</h1>
+<p class="meta">From class notes · checked against the UE 5.8 engine source · 8 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Instancing policy decides <b>how many ability objects GAS creates</b>. <b>Per Execution</b>: a fresh object every
+activation, so variables always start clean. <b>Per Actor</b>: one object per character, made when the ability is granted and
+reused, so variables <b>remember</b> between uses. <b>Non-Instanced</b>: no object at all, and it's deprecated since UE 5.5.
+In 5.8 it's quietly treated as Per Actor.</p>
+</div>
+
+<h2>The three policies</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>Instanced Per Execution</th><th>Instanced Per Actor</th><th>Non-Instanced</th></tr>
+<tr><td>Objects created</td><td>A <b>new one every activation</b></td><td><b>One per actor</b> (per grant), reused</td><td>None. Runs on the class default object (CDO)</td></tr>
+<tr><td>When created</td><td>On each activation</td><td><b>When granted</b> (<code>GiveAbility</code>)</td><td>Never</td></tr>
+<tr><td>Variables between uses</td><td><b>Reset</b> to defaults every time</td><td><b>Kept</b>: state carries over</td><td>Can't have state at all</td></tr>
+<tr><td>Running twice at once</td><td><b>Yes</b>, each activation is its own object</td><td><b>No</b>, refused while active (unless "Retrigger Instanced Ability" ends the old one first)</td><td>n/a</td></tr>
+<tr><td>Blueprint graphs, latent nodes, ability tasks</td><td>Yes</td><td>Yes</td><td>No. Logic must be pure C++</td></tr>
+<tr><td>Cost</td><td>An allocation per use (more garbage-collection churn)</td><td>One allocation per grant</td><td>Cheapest</td></tr>
+<tr><td>Status in UE 5.8</td><td><b>The engine default</b></td><td>Epic's recommended default</td><td><b>Deprecated (5.5)</b></td></tr>
+</table></div>
+<p>Where to find it: the ability's <b>Class Defaults → Advanced → Instancing Policy</b> (the dropdown in your notes), or
+<code>InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;</code> in a C++ ability's constructor.</p>
+
+<h2>Corrections to keep in mind (checked in the engine source)</h2>
+<ul>
+<li><b>Per Actor creates its instance when the ability is <i>granted</i></b>, not at the first activation.
+<code>GiveAbility</code> has the comment <i>"Create the instance at creation time"</i>. "Once, up front" is the accurate way
+to say it.</li>
+<li><b>Non-Instanced is deprecated.</b> The enum is marked <code>UE_DEPRECATED_FORGAME(5.5, "Use InstancedPerActor as the
+default...")</code>, and <code>GetInstancingPolicy()</code> <b>returns Per Actor instead</b> unless the console variable
+<code>AbilitySystem.Fix.AllowNonInstancedAbilities</code> is set. Older tutorials recommend Non-Instanced for "cheap" abilities;
+on 5.5+ that advice is out of date.</li>
+<li><b>The engine default is Per Execution</b> (set in <code>UGameplayAbility</code>'s constructor), which is why your new
+abilities show "Instanced Per Execution" until you change it.</li>
+</ul>
+
+<h2>Which to choose</h2>
+<ul>
+<li><b>Per Actor</b> for most things: attacks, equip/unequip, anything that runs once at a time per character. Cheaper, and it can
+cache things. Epic's own recommendation since 5.5.</li>
+<li><b>Per Execution</b> when you need <b>overlapping copies</b> (fire a projectile ability again before the first finishes), or
+when leftover state would be a bug and you'd rather start clean every time.</li>
+</ul>
+
+<div class="box warn"><span class="label">Per Actor's trap: leftover state</span>
+<p>Because the same object is reused, a variable set during one activation is <b>still set</b> at the start of the next.
+A "combo count" or "has hit something" flag from the last swing leaks into this one. Reset such variables at the start of
+<code>ActivateAbility</code> (or in <code>EndAbility</code>). Per Execution can't have this bug, which is its main
+selling point.</p>
+</div>
+
+<h2>In your code</h2>
+<pre><code>// UWarriorHeroGameplayAbility
+TWeakObjectPtr&lt;AWarriorHeroCharacter&gt; CachedWarriorHeroCharacter;
+
+AWarriorHeroCharacter* GetHeroCharacterFromActorInfo()
+{
+    if (!CachedWarriorHeroCharacter.IsValid())
+        CachedWarriorHeroCharacter = Cast&lt;AWarriorHeroCharacter&gt;(CurrentActorInfo-&gt;AvatarActor.Get());
+    ...
+}</code></pre>
+<p>This cache (<a href="11-combat-components.html">combat components</a>) <b>depends on the instancing policy</b>:</p>
+<ul>
+<li><b>Per Actor</b>: the cache is filled once and reused for every activation. That's what it's designed for.</li>
+<li><b>Per Execution</b> (the default): each activation is a brand-new object, so the cache starts empty <b>every time</b>.
+It still works, but it only saves repeated casts <i>within one activation</i>.</li>
+<li><b>Non-Instanced</b> (if it were still allowed): the code would write to the shared class default object, so <b>every
+character</b> would share one cache. The first hero to use it would "win". That's exactly why you can't store state in
+non-instanced abilities, and part of why Epic removed them.</li>
+</ul>
+<p>Worth checking: open <code>GA_Hero_EquipAxe</code> and the other abilities and see which policy they use. If the course sets
+them to Per Actor, the cache is doing its job. If they're still on the default, now you know what that means.</p>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>Name the three instancing policies, in one line each.</summary>
+<div class="a"><p>Per Execution: a new object every activation, state reset. Per Actor: one reused object per actor, state kept. Non-Instanced: no object, runs on the CDO, no state (deprecated).</p></div></details>
+<details class="q"><summary>When is a Per Actor ability's instance created?</summary>
+<div class="a"><p>When the ability is granted (<code>GiveAbility</code>), not on first activation.</p></div></details>
+<details class="q"><summary>What's the engine's default instancing policy in UE 5.8?</summary>
+<div class="a"><p>Instanced Per Execution (set in UGameplayAbility's constructor).</p></div></details>
+<details class="q"><summary>What happens to a Non-Instanced ability in UE 5.5+?</summary>
+<div class="a"><p>It's deprecated. <code>GetInstancingPolicy()</code> treats it as Per Actor unless the <code>AbilitySystem.Fix.AllowNonInstancedAbilities</code> console variable is set.</p></div></details>
+<details class="q"><summary>Can a Per Actor ability be activated while it's already running?</summary>
+<div class="a"><p>No. Activation is refused, unless "Retrigger Instanced Ability" is on, which ends the running one and starts again.</p></div></details>
+<details class="q"><summary>When would you choose Per Execution over Per Actor?</summary>
+<div class="a"><p>When several activations must overlap, or when you want guaranteed clean state every time.</p></div></details>
+<details class="q"><summary>What's the classic bug with Per Actor abilities?</summary>
+<div class="a"><p>Leftover state: variables from the last activation are still set at the start of the next one. Reset them in ActivateAbility or EndAbility.</p></div></details>
+<details class="q"><summary>Why couldn't a Non-Instanced ability safely cache the hero character in a member variable?</summary>
+<div class="a"><p>It runs on the shared class default object, so every character would read and write the same cache.</p></div></details>
+<details class="q"><summary>Why can't Non-Instanced abilities use Blueprint latent nodes or ability tasks?</summary>
+<div class="a"><p>Those need an object to hold their state while waiting. Non-Instanced abilities have no instance.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

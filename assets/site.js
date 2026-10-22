@@ -19,6 +19,7 @@ const TOPICS = [
   { cat: "gow", url: "gow/12-ability-input.html", title: "Ability input: press a button, activate by tag" },
   { cat: "gow", url: "gow/13-equip-anim-layers.html", title: "Equip and unequip: montages, events, anim layers" },
   { cat: "gow", url: "gow/14-weapon-abilities.html", title: "Weapon abilities: grant on equip, remove on unequip" },
+  { cat: "gow", url: "gow/15-instancing-policy.html", title: "Ability instancing policy" },
   // C++
   { cat: "cpp", url: "cpp/pointers-references-const.html", title: "Values, references, pointers, const, structs" },
   { cat: "cpp", url: "cpp/containers-move.html", title: "Containers move: the TArray reference bug" },
