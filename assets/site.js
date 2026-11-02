@@ -32,6 +32,7 @@ const TOPICS = [
   { cat: "unreal", url: "unreal/tick-and-frame.html", title: "Tick controls and frame order" },
   { cat: "unreal", url: "unreal/many-objects.html", title: "2,000 tickers: managers, subsystems, instancing" },
   { cat: "unreal", url: "unreal/blueprint-cpp-boundary.html", title: "The Blueprint / C++ boundary" },
+  { cat: "unreal", url: "unreal/saved-vs-runtime-state.html", title: "Saved vs runtime state: serialisation and Transient" },
   // Git
   { cat: "git", url: "git/01-where-changes-live.html", title: "Where your changes live: add, commit, status, diff" },
   { cat: "git", url: "git/02-push-pull.html", title: "Sharing: remote, push, pull, fetch, clone" },

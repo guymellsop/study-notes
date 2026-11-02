@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Saved vs Runtime State · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Unreal internals</a></nav>
+<main>
+<h1>Saved vs runtime state: serialisation and <code>Transient</code></h1>
+<p class="meta">From THRUST architecture planning · checked against the UE 5.8 engine source · 9 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>Every <code>UPROPERTY</code> is <b>saved into its asset</b> by default. That's right for <b>authored</b> data (what a
+designer sets: "this part uses this data asset") and wrong for <b>runtime state</b> (what happens while playing: "this part has 3
+health left"). <code>Transient</code> means "never save this, never load it, and don't copy it when duplicating". It always
+starts at the class default.</p>
+</div>
+
+<h2>Serialisation in one paragraph</h2>
+<p><b>Serialising</b> means turning an object into bytes (to save it to a <code>.uasset</code>, copy it, or send it over the
+network) and back again. Unreal does it <b>automatically for every <code>UPROPERTY</code></b>: that's why setting a value in the
+Details panel and pressing Save just works, and why the reflection system from
+<a href="../cpp/how-unreal-builds.html">How Unreal builds your code</a> matters. Specifiers like <code>Transient</code> are how
+you <b>opt a property out</b>.</p>
+
+<h2>Two kinds of data</h2>
+<div class="table-wrap"><table>
+<tr><th></th><th>Authored</th><th>Runtime state</th></tr>
+<tr><td>Who sets it</td><td>A designer, in the editor</td><td>The game, while playing</td></tr>
+<tr><td>Example</td><td><code>PartDataAssetClass</code>: which data asset defines this part</td><td><code>CurrentHealth</code>: how damaged it is right now</td></tr>
+<tr><td>Should it be saved in the asset?</td><td><b>Yes</b>, it <i>is</i> the asset</td><td><b>No</b>. There's no meaningful "default damage"</td></tr>
+<tr><td>Specifiers</td><td><code>EditDefaultsOnly</code> / <code>EditAnywhere</code></td><td><code>Transient</code>, <code>VisibleInstanceOnly</code></td></tr>
+</table></div>
+
+<pre><code>// Authored. Saved in the def, copied to every instance.
+UPROPERTY(EditDefaultsOnly, Category = "Part Data")
+TSoftClassPtr&lt;UDataAsset_VehiclePartInfoBase&gt; PartDataAssetClass;
+
+// Runtime. Never saved, never authorable, reset on every load and every copy.
+UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "Part State")
+float CurrentHealth = 0.f;</code></pre>
+<ul>
+<li><b><code>VisibleInstanceOnly</code></b>: shown (read-only) in the Details panel only on a <i>placed instance</i>, not in the
+class defaults. You can <i>watch</i> the value while playing, but nobody can author it.</li>
+<li><b><code>TSoftClassPtr</code></b>: a soft reference to a <i>class</i> (the soft version of <code>TSubclassOf</code>). It stores a
+path and loads nothing until asked. Same reasoning as <a href="asset-references.html">hard vs soft references</a> and your
+<a href="../gow/10-startup-data.html">startup data</a>.</li>
+</ul>
+
+<h2>Why a saved runtime field is a problem even if it "works"</h2>
+<p>In THRUST the part's payload lives in the saved <code>UPDA_CompoundShapeDef</code>, and every craft deep-copies it. If
+<code>CurrentHealth</code> weren't Transient:</p>
+<ul>
+<li>It appears in the Details panel, so an author <b>can</b> set it to 3, and every craft built from that def starts damaged.</li>
+<li>Nothing flags it as wrong. It's not corruption; it's a field that <b>shouldn't exist in the asset at all</b>.</li>
+</ul>
+<p><code>Transient</code> turns a convention ("please don't set that") into a <b>rule the engine enforces</b>.</p>
+
+<h2>What exactly gets skipped (from the engine source)</h2>
+<p><code>FProperty::ShouldSerializeValue</code> in <code>CoreUObject/Private/UObject/Property.cpp</code> decides, per property,
+whether an archive writes it:</p>
+<div class="table-wrap"><table>
+<tr><th>Specifier</th><th>Saved to disk?</th><th>Copied by duplicate / copy-paste?</th><th>Use for</th></tr>
+<tr><td>(none)</td><td>Yes</td><td>Yes</td><td>Authored data</td></tr>
+<tr><td><code>Transient</code></td><td><b>No</b></td><td><b>No</b>, reset to default</td><td>Runtime state, caches</td></tr>
+<tr><td><code>DuplicateTransient</code></td><td>Yes</td><td><b>No</b>, reset to default</td><td>Saved, but unique per copy (e.g. an ID that must not be duplicated)</td></tr>
+<tr><td><code>SaveGame</code></td><td>(normal)</td><td>(normal)</td><td>Marks a property for <b>save-game</b> archives, which then write <i>only</i> SaveGame-marked properties</td></tr>
+</table></div>
+<ul>
+<li><b>Duplicating skips Transient too.</b> The archives behind <code>DuplicateObject</code> are flagged <i>persistent</i>, so the same
+rule applies. For THRUST: deep-copying a def's payload into a craft gives every copy a <b>fresh</b> <code>CurrentHealth</code>
+at its default, never a stale one.</li>
+<li><b>One exception:</b> the flag's own comment says <i>"except for Blueprint CDOs"</i>. A Transient property's default set in a
+Blueprint's <b>Class Defaults</b> is still saved, because the code skips it only when <code>!Ar.IsSerializingDefaults()</code>. So "starts at
+the default" means the class default, which can come from a Blueprint.</li>
+</ul>
+
+<h2>The cost: save games</h2>
+<p>Transient also means a save file can't capture the value by just serialising the object. If THRUST wants a mid-mission save
+that remembers damage, you <b>write it deliberately</b>: gather the state into your own save struct (a <code>USaveGame</code>
+subclass with explicit fields) and restore it on load. That's usually what you want anyway: a save file should record
+<i>the craft's state</i>, not reach into the shape tree's internals. (Unreal also has the <code>SaveGame</code> specifier plus a
+save-game archive for "serialise only these fields", but that's the other route, and knowing it exists is enough for now.)</p>
+
+<div class="box say"><span class="label">The rule of thumb</span>
+<p>Ask: "what should this be in a <b>brand-new</b> craft?" If the answer is <b>"whatever the data says"</b>, it's authored.
+Save it. If it's <b>"the same for every craft, always"</b> (full health, zero heat, not on fire), it's runtime state:
+<code>Transient</code>.</p>
+</div>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>What does "serialise" mean in Unreal?</summary>
+<div class="a"><p>Convert an object to bytes and back: for saving assets, copying/duplicating, or networking. UPROPERTYs are serialised automatically.</p></div></details>
+<details class="q"><summary>What does <code>Transient</code> do to a UPROPERTY?</summary>
+<div class="a"><p>It's not saved to disk, not loaded, and not copied when the object is duplicated. It always starts at its class default.</p></div></details>
+<details class="q"><summary>Authored data vs runtime state: one example of each from THRUST.</summary>
+<div class="a"><p>Authored: <code>PartDataAssetClass</code> (which data asset defines the part). Runtime: <code>CurrentHealth</code>.</p></div></details>
+<details class="q"><summary>If <code>CurrentHealth</code> weren't Transient, what could go wrong?</summary>
+<div class="a"><p>It'd be an editable, saved field in the def, so an author could set it, and every craft would start with that value. Nothing would flag it.</p></div></details>
+<details class="q"><summary><code>Transient</code> vs <code>DuplicateTransient</code>?</summary>
+<div class="a"><p>Transient: not saved and not duplicated. DuplicateTransient: saved to disk, but reset to default whenever the object is duplicated or copy-pasted.</p></div></details>
+<details class="q"><summary>When a THRUST craft deep-copies a def's payload, what's a Transient field's value in the copy?</summary>
+<div class="a"><p>Its class default. Duplication skips Transient properties, because the duplicate archives are persistent.</p></div></details>
+<details class="q"><summary>What does <code>VisibleInstanceOnly</code> do?</summary>
+<div class="a"><p>Shows the property read-only on placed instances in the Details panel, but not in class defaults. You can watch it, not author it.</p></div></details>
+<details class="q"><summary>How would THRUST save mid-mission damage if health is Transient?</summary>
+<div class="a"><p>Deliberately: copy the state into a save struct (a USaveGame subclass with explicit fields) and restore it on load.</p></div></details>
+<details class="q"><summary>The rule of thumb for "Transient or not?"</summary>
+<div class="a"><p>"What should this be in a brand-new craft?" Whatever the data says means authored. The same for every craft means Transient.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>
