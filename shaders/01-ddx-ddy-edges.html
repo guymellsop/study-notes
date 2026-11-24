@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>ddx, ddy and Edges · Study</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav class="top"><a href="../index.html">Study</a><span>/</span><a href="index.html">Shaders</a></nav>
+<main>
+<h1><code>ddx</code>, <code>ddy</code> and the colour boundary mask</h1>
+<p class="meta">From THRUST's cel shader · screen-space derivatives · 8 min</p>
+
+<div class="box tldr"><span class="label">In one breath</span>
+<p>The GPU shades pixels in <b>2×2 blocks</b>, all at once, so each pixel can see its neighbours' values. <code>ddx(v)</code> is
+"my right-hand neighbour's <code>v</code> minus mine"; <code>ddy(v)</code> is the same vertically. In a flat area of colour
+that's 0; where two colours meet, it <b>spikes</b>. The spike <i>is</i> the boundary.</p>
+</div>
+
+<h2>The code</h2>
+<pre><code>// boundary registers as a spike in the gradient. Max-of-channels rather
+// than luminance: two colours of equal brightness still form a boundary.
+float3 dX = ddx(BaseColor);
+float3 dY = ddy(BaseColor);
+
+float gx = max(abs(dX.r), max(abs(dX.g), abs(dX.b)));
+float gy = max(abs(dY.r), max(abs(dY.g), abs(dY.b)));
+
+float g = max(gx, gy);
+return saturate(g * Width);</code></pre>
+
+<h2>Why the GPU can do this: quads</h2>
+<pre><code>  ┌─────┬─────┐
+  │  A  │  B  │    One quad: four pixels shaded together, in lockstep.
+  ├─────┼─────┤    ddx at A = value(B) − value(A)
+  │  C  │  D  │    ddy at A = value(C) − value(A)
+  └─────┴─────┘</code></pre>
+<p>Pixels are never shaded alone. The hardware always runs them in 2×2 <b>quads</b>, the same shader in step, so "what did my
+neighbour get for this variable?" is basically free. The GPU needs this anyway for <b>texture mipmapping</b>: how fast UVs change
+across the screen decides which mip level to sample. <code>ddx</code>/<code>ddy</code> just let you use the same trick on any
+value.</p>
+<p>The name: these are <b>partial derivatives</b> (rates of change) in screen <b>x</b> and <b>y</b>. In Unreal's material
+editor they're the <b>DDX</b> and <b>DDY</b> nodes.</p>
+
+<h2>How the snippet turns that into an edge mask</h2>
+<pre><code> red  red | blue blue
+ red  red | blue blue
+   ddx in the red area:   red − red  = 0     → no edge
+   ddx across the line:   blue − red = large → edge</code></pre>
+<ol>
+<li><b><code>ddx</code>/<code>ddy</code> of the colour</b>: per channel, how much it changes to the next pixel, horizontally and vertically.</li>
+<li><b><code>abs</code></b>: red→blue and blue→red are the same edge. Drop the sign.</li>
+<li><b><code>max</code> over r, g, b</b>: use whichever channel changed most. A <b>luminance</b> (brightness) comparison would miss
+two colours of equal brightness, like a pure red and a green of the same lightness. That's what the comment means.</li>
+<li><b><code>max(gx, gy)</code></b>: an edge in either direction counts.</li>
+<li><b><code>saturate(g * Width)</code></b>: <code>Width</code> is really a <b>sensitivity/gain</b>: the bigger it is, the smaller
+a colour change needed to read as a full edge. <code>saturate</code> clamps to 0–1.</li>
+</ol>
+
+<h2>The limits (where it surprises you)</h2>
+<ul>
+<li><b>Lines are about 1–2 pixels thick, always.</b> Derivatives only compare immediate neighbours, so <code>Width</code> cannot make
+the line thicker; it only makes faint edges stronger. Thicker or consistent outlines need sampling further away, usually in
+a <b>post-process</b> that reads scene colour, depth or a custom stencil at several offsets.</li>
+<li><b>It can miss edges.</b> The comparison only happens <i>inside</i> a quad. A boundary that falls exactly between two quads
+(pixel 1 red, pixel 2 blue, but they're in different quads) gives 0 in both. The result: lines with gaps or a dotted look,
+especially on edges that line up with the pixel grid.</li>
+<li><b>Coarse vs fine.</b> HLSL has <code>ddx_coarse</code> (one value shared across the quad) and <code>ddx_fine</code> (per pixel
+row/column). Plain <code>ddx</code> is allowed to be the coarse one, which makes edges a little blockier.</li>
+<li><b>Gradients light up.</b> A smooth fade changes a little every pixel. Small, but non-zero, so with a high <code>Width</code>
+the whole gradient reads as "edge". Hard-edged colour areas work best.</li>
+<li><b>It's screen-space.</b> The same boundary gives the same ~1 pixel line near or far; it doesn't scale with distance.</li>
+<li><b>Pixel shader only.</b> Vertex shaders don't run in quads, so there are no neighbours to compare.</li>
+</ul>
+
+<section class="quiz">
+<h2>Quiz yourself</h2>
+<details class="q"><summary>What does <code>ddx(v)</code> return?</summary>
+<div class="a"><p>How much <code>v</code> changes from this pixel to its horizontal neighbour: the neighbour's value minus this one.</p></div></details>
+<details class="q"><summary>Why can a pixel shader know its neighbour's value at all?</summary>
+<div class="a"><p>The GPU shades pixels in 2×2 quads in lockstep, so the values of the other three pixels are available.</p></div></details>
+<details class="q"><summary>What does the GPU normally use derivatives for, even if you never call ddx?</summary>
+<div class="a"><p>Choosing texture mip levels: how fast UVs change across the screen.</p></div></details>
+<details class="q"><summary>Why max of the r, g, b differences instead of comparing luminance?</summary>
+<div class="a"><p>Two different colours of the same brightness have equal luminance, so a greyscale comparison sees no edge. Per-channel comparison catches it.</p></div></details>
+<details class="q"><summary>Does raising <code>Width</code> make the lines thicker?</summary>
+<div class="a"><p>No. It's a sensitivity multiplier. Line thickness is fixed at about 1–2 pixels by the neighbour comparison.</p></div></details>
+<details class="q"><summary>Why can derivative edge detection leave gaps in a line?</summary>
+<div class="a"><p>Differences are only computed inside each 2×2 quad. A boundary exactly between two quads is invisible to both.</p></div></details>
+<details class="q"><summary>Why might a smooth colour gradient show up in the edge mask?</summary>
+<div class="a"><p>It changes a little every pixel, so derivatives are small but non-zero, and a high Width amplifies them into "edge".</p></div></details>
+<details class="q"><summary>How would you get thicker, more reliable outlines?</summary>
+<div class="a"><p>A post-process that samples scene colour, depth or custom stencil at several pixel offsets, instead of relying on 2×2 derivatives.</p></div></details>
+</section>
+
+<div class="page-end"></div>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

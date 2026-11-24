@@ -42,6 +42,8 @@ const TOPICS = [
   { cat: "git", url: "git/06-undoing.html", title: "Undoing things safely" },
   { cat: "git", url: "git/07-unreal-teams.html", title: "Git in Unreal teams: binaries, LFS, locking, Perforce" },
   { cat: "git", url: "git/08-perforce.html", title: "Perforce refresher" },
+  // Shaders
+  { cat: "shaders", url: "shaders/01-ddx-ddy-edges.html", title: "ddx, ddy and the colour boundary mask" },
   // Performance
   { cat: "perf", url: "perf/profiling-triage.html", title: "22 fps, 20 minutes: profiling triage" },
   // Portfolio
@@ -57,6 +59,7 @@ const CATEGORIES = {
   cpp: "C++",
   unreal: "Unreal internals",
   git: "Git",
+  shaders: "Shaders",
   perf: "Performance",
   portfolio: "Portfolio",
   behavioural: "Interview answers",
