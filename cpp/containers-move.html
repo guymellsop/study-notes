@@ -62,6 +62,38 @@ fixing it.</li>
 changes. An array-of-structs design would have had exactly this bug."</p>
 </div>
 
+<h2>How much memory does a TArray actually take? (UE 5.8 source)</h2>
+<h3>Empty: nothing on the heap</h3>
+<p><code>TArray&lt;T&gt; A;</code> sets <code>ArrayNum = 0</code> and <code>ArrayMax = 0</code>. The array object is just
+<b>16 bytes</b> (data pointer, count, capacity) inside whatever owns it, and <b>no memory is allocated until the first
+<code>Add</code></b>. Unreal doesn't guess you'll fill it, because thousands of arrays stay empty forever.</p>
+
+<h3>Growing: <code>DefaultCalculateSlackGrow</code></h3>
+<ul>
+<li><b>First allocation:</b> room for <b>4</b> elements (or exactly what you asked for, if more).</li>
+<li><b>After that:</b> needed + 3/8 × needed + 16, so about <b>1.375× + 16</b>. Then rounded up to the memory allocator's
+block size, so sometimes a little extra.</li>
+<li>Adding one at a time: capacity goes 4 → 22 → 47 → 82 → 130 → 196 → … <b>1,000 <code>Add</code>s ≈ 11 reallocations</b>,
+not 1,000.</li>
+</ul>
+
+<h3>Sizing it yourself: performance, not safety</h3>
+<p>Reallocation is normal and cheap-ish. The <b>bug</b> is keeping a reference across an <code>Add</code>, and pre-sizing doesn't
+fix that, only hides it.</p>
+<div class="table-wrap"><table>
+<tr><th>You know…</th><th>Do</th><th>Result</th></tr>
+<tr><td>Roughly how many you'll add</td><td><code>Reserve(N)</code>, then <code>Add</code>/<code>Emplace</code></td><td>One allocation; <code>Num()</code> still 0</td></tr>
+<tr><td>The values up front</td><td><code>TArray&lt;int32&gt; A = {1, 2, 3};</code></td><td>Exactly sized</td></tr>
+<tr><td>You'll write every slot by index</td><td><code>SetNum(N)</code>, then <code>A[i] = …</code></td><td>Allocates <b>and</b> creates N default elements</td></tr>
+<tr><td>Nothing</td><td>Just <code>Add</code></td><td>Perfectly normal</td></tr>
+</table></div>
+<ul>
+<li><b><code>Reset()</code></b>: empties but <b>keeps the memory</b>, for arrays refilled every frame.</li>
+<li><b><code>TArray&lt;T, TInlineAllocator&lt;8&gt;&gt;</code></b>: the first 8 elements live <b>inside the array object</b>, so small
+arrays never touch the heap.</li>
+<li><b>Rule of thumb:</b> don't pre-size by default. Use <code>Reserve</code> when you know the count <i>and</i> the code runs often.</li>
+</ul>
+
 <section class="quiz">
 <h2>Quiz yourself</h2>
 <details class="q"><summary>Why does a reference into a TArray break after <code>Add</code>?</summary>
@@ -76,6 +108,18 @@ changes. An array-of-structs design would have had exactly this bug."</p>
 <div class="a"><p>RemoveAt shifts every later element down one. RemoveAtSwap moves the last element into the hole (faster, changes order). Both invalidate stored indices for the moved elements.</p></div></details>
 <details class="q"><summary>What's the std:: name for this category of bug?</summary>
 <div class="a"><p>Iterator (and reference/pointer) invalidation, e.g. <code>std::vector::push_back</code> reallocating.</p></div></details>
+<details class="q"><summary>How much heap memory does an empty <code>TArray</code> allocate?</summary>
+<div class="a"><p>None. The array object is 16 bytes (pointer, count, capacity), and nothing is allocated until the first Add.</p></div></details>
+<details class="q"><summary>How big is the first allocation, and how does it grow after?</summary>
+<div class="a"><p>Room for 4 (or what you asked for, if more), then about 1.375× + 16 each time, rounded up to the allocator's block size.</p></div></details>
+<details class="q"><summary>Roughly how many reallocations for 1,000 single <code>Add</code>s?</summary>
+<div class="a"><p>About 11. Growth is proportional, not one at a time.</p></div></details>
+<details class="q"><summary><code>Reserve(N)</code> vs <code>SetNum(N)</code>?</summary>
+<div class="a"><p>Reserve: capacity only, Num stays 0. SetNum: capacity plus N real default-constructed elements.</p></div></details>
+<details class="q"><summary>Does pre-sizing an array fix the dangling-reference bug?</summary>
+<div class="a"><p>No. It only avoids reallocation for that count, which hides the bug until the size changes. Pre-sizing is a performance tool.</p></div></details>
+<details class="q"><summary>What does <code>TInlineAllocator&lt;8&gt;</code> do?</summary>
+<div class="a"><p>Stores the first 8 elements inside the array object itself, so small arrays need no heap allocation.</p></div></details>
 </section>
 
 <div class="page-end"></div>
